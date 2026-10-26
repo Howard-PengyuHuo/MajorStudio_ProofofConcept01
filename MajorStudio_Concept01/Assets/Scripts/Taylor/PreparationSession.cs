@@ -37,6 +37,10 @@ namespace CarryOn.Taylor
         public event Action PrintRequested;
         public event Action<IdentityCard> PreparationCompleted;
 
+        // The online adapter selects network mode before activating the prefab.
+        // The serialized offline-testing configuration remains unchanged on the asset.
+        public void EnterNetworkMode() => localSimulation = false;
+
         private void Update()
         {
             if (!localSimulation || Phase != EntryPhase.Preparation) return;
@@ -131,13 +135,22 @@ namespace CarryOn.Taylor
 
         public void ApplyNetworkSnapshot(EntryPhase phase, float remaining, IdentityCard card)
         {
+            ApplyNetworkSnapshot(phase, remaining, card, HasPrintedIdentity, PrintedIdentity);
+        }
+
+        // Apply the identity and its printed copy before notifying views or entering Interview.
+        public void ApplyNetworkSnapshot(EntryPhase phase, float remaining, IdentityCard card,
+            bool hasPrinted, IdentityCard printedCard)
+        {
             if (localSimulation) return;
             bool completed = Phase != EntryPhase.Interview && phase == EntryPhase.Interview;
             Phase = phase;
             RemainingSeconds = Mathf.Max(0, remaining);
             Identity = card;
+            HasPrintedIdentity = hasPrinted;
+            PrintedIdentity = hasPrinted ? printedCard : new IdentityCard();
             Changed?.Invoke();
-            if (completed) PreparationCompleted?.Invoke(card);
+            if (completed) PreparationCompleted?.Invoke(hasPrinted ? printedCard : card);
         }
     }
 }

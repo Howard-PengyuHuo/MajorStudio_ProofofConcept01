@@ -24,6 +24,7 @@ namespace Game.Multiplayer
         private Button copyButton;
         private Button leaveButton;
         private Button exitBackButton;
+        private Button startGameButton;
         private Text menuStatusText;
         private Text joinCodeText;
         private Text playerCountText;
@@ -96,6 +97,7 @@ namespace Game.Multiplayer
             valid &= TryBind(root, "CopyCodeButton", out copyButton);
             valid &= TryBind(root, "LeaveRoomButton", out leaveButton);
             valid &= TryBind(root, "ExitBackButton", out exitBackButton);
+            valid &= TryBind(root, "StartGameButton", out startGameButton);
             valid &= TryBind(root, "StatusText", out menuStatusText);
             valid &= TryBind(root, "JoinCodeText", out joinCodeText);
             valid &= TryBind(root, "PlayerCountText", out playerCountText);
@@ -110,7 +112,7 @@ namespace Game.Multiplayer
 
         private GameObject FindExistingCanvas()
         {
-            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include, FindObjectsSortMode.None);
+            Canvas[] canvases = FindObjectsByType<Canvas>(FindObjectsInactive.Include);
             GameObject match = null;
             int matchCount = 0;
             foreach (Canvas canvas in canvases)
@@ -187,6 +189,8 @@ namespace Game.Multiplayer
             leaveButton.onClick.AddListener(LeaveRoom);
             exitBackButton.onClick.RemoveListener(LeaveRoom);
             exitBackButton.onClick.AddListener(LeaveRoom);
+            startGameButton.onClick.RemoveListener(StartGame);
+            startGameButton.onClick.AddListener(StartGame);
         }
 
         private void UnbindButtonListeners()
@@ -196,7 +200,10 @@ namespace Game.Multiplayer
             copyButton.onClick.RemoveListener(CopyJoinCode);
             leaveButton.onClick.RemoveListener(LeaveRoom);
             exitBackButton.onClick.RemoveListener(LeaveRoom);
+            startGameButton.onClick.RemoveListener(StartGame);
         }
+
+        private void StartGame() => session.StartGame();
 
         private void CreateRoom()
         {
@@ -222,6 +229,7 @@ namespace Game.Multiplayer
 
         private void OnStateChanged(ConnectionState state, string message)
         {
+            multiplayerCanvasInstance.SetActive(!session.IsInGame);
             bool showLobby = state == ConnectionState.Connected;
             mainMenuPanel.SetActive(!showLobby);
             lobbyPanel.SetActive(showLobby);
@@ -229,6 +237,7 @@ namespace Game.Multiplayer
             createButton.interactable = !session.IsBusy;
             joinButton.interactable = !session.IsBusy;
             joinCodeInput.interactable = !session.IsBusy;
+            RefreshStartButton();
         }
 
         private void OnPlayersChanged(IReadOnlyList<NetworkPlayerInfo> players)
@@ -252,6 +261,13 @@ namespace Game.Multiplayer
             if (players.Count < NetworkSessionManager.MaximumPlayers && session.IsHost)
                 status.Append("\nWaiting for Player 2...");
             playerStatusText.text = status.ToString();
+            RefreshStartButton();
+        }
+
+        private void RefreshStartButton()
+        {
+            startGameButton.gameObject.SetActive(session.IsHost);
+            startGameButton.interactable = session.CanStartGame;
         }
 
         private void OnJoinCodeChanged(string code)

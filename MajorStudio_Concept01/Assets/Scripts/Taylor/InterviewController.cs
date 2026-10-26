@@ -49,10 +49,24 @@ namespace CarryOn.Taylor
         public bool EntryApproved { get; private set; }
         public int QuestionIndex { get; private set; }
         public int Reputation { get; private set; }
+        public string ResultReason { get; private set; } = string.Empty;
         public event Action Finished;
+        public event Action Changed;
+        public event Action<int, string> AnswerRequested;
+        public event Action ShakeRequested;
+        private bool networkMode;
+        private bool networkAuthority;
+        private bool localInputAllowed = true;
         private bool started;
         private IdentityCard identity;
         private int lastSubmitFrame = -1;
+
+        public void EnterNetworkMode(bool canSubmit, bool isAuthority = false)
+        {
+            networkMode = true;
+            networkAuthority = isAuthority;
+            localInputAllowed = canSubmit;
+        }
 
         private void OnEnable()
         {
@@ -85,19 +99,23 @@ namespace CarryOn.Taylor
             started = false;
             IsFinished = false;
             EntryApproved = false;
+            ResultReason = string.Empty;
             QuestionIndex = 0;
+            lastSubmitFrame = -1;
+            if (answerInput != null) answerInput.SetTextWithoutNotify(string.Empty);
             Reputation = Mathf.Max(1, startingReputation);
             RefreshReputation();
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             if (shakeButton != null) shakeButton.interactable = false;
         }
 
-        private void BeginInterview(IdentityCard card)
+        public void BeginInterview(IdentityCard card)
         {
             identity = card;
             QuestionIndex = 0;
             IsFinished = false;
             EntryApproved = false;
+            ResultReason = string.Empty;
             started = true;
             lastSubmitFrame = -1;
             Reputation = Mathf.Max(1, startingReputation);
@@ -116,34 +134,51 @@ namespace CarryOn.Taylor
         // TMP onSubmit is Enter; onEndEdit is deliberately not used (clicking away must not submit).
         public void SubmitAnswer(string value)
         {
-            if (!started || IsFinished || session.Phase != EntryPhase.Interview ||
+            if (!localInputAllowed || !started || IsFinished || session.Phase != EntryPhase.Interview ||
                 !answerInput.gameObject.activeInHierarchy || lastSubmitFrame == Time.frameCount) return;
             if (string.IsNullOrWhiteSpace(value)) { FocusAnswer(); return; }
             lastSubmitFrame = Time.frameCount;
+            if (networkMode)
+            {
+                AnswerRequested?.Invoke(QuestionIndex, value);
+                return;
+            }
+            EvaluateAnswer(value);
+        }
+
+        // Authority entry point: deliberately independent of local panel visibility/input focus.
+        public bool EvaluateAnswer(string value)
+        {
+            if (networkMode && !networkAuthority) return false;
+            if (!started || IsFinished || session.Phase != EntryPhase.Interview ||
+                string.IsNullOrWhiteSpace(value) || questions == null ||
+                QuestionIndex < 0 || QuestionIndex >= questions.Length) return false;
             var current = questions[QuestionIndex];
             string expected = current.answerSource == AnswerSource.ForgedName ? identity.Name :
                 current.answerSource == AnswerSource.ForgedNationality ? identity.Nationality : current.answer;
             if (!string.Equals(value.Trim(), (expected ?? "").Trim(), StringComparison.OrdinalIgnoreCase))
             {
                 Finish(false, wrongAnswerReason);
-                return;
+                return true;
             }
             QuestionIndex++;
             if (QuestionIndex >= questions.Length) Finish(true, successReason);
             else ShowQuestion();
+            Changed?.Invoke();
+            return true;
         }
 
         private void ShowQuestion()
         {
             questionText.text = questions[QuestionIndex].question;
-            answerInput.interactable = true;
+            answerInput.interactable = localInputAllowed;
             answerInput.SetTextWithoutNotify("");
             FocusAnswer();
         }
 
         public void FocusAnswer()
         {
-            if (isActiveAndEnabled && started && !IsFinished) StartCoroutine(FocusNextFrame());
+            if (localInputAllowed && isActiveAndEnabled && started && !IsFinished) StartCoroutine(FocusNextFrame());
         }
 
         private IEnumerator FocusNextFrame()
@@ -155,13 +190,47 @@ namespace CarryOn.Taylor
 
         public void Shake()
         {
-            if (!started || IsFinished || session.Phase != EntryPhase.Interview ||
+            if (!localInputAllowed || !started || IsFinished || session.Phase != EntryPhase.Interview ||
                 shakeButton == null || !shakeButton.gameObject.activeInHierarchy) return;
+            if (networkMode)
+            {
+                ShakeRequested?.Invoke();
+                return;
+            }
+            ApplyShake();
+        }
+
+        public bool ApplyShake()
+        {
+            if (networkMode && !networkAuthority) return false;
+            if (!started || IsFinished || session.Phase != EntryPhase.Interview) return false;
             Reputation = Mathf.Max(0, Reputation - Mathf.Max(1, shakePenalty));
             RefreshReputation();
-            onShakeRequested.Invoke();
+            if (!networkMode) onShakeRequested.Invoke();
             if (Reputation == 0) Finish(false, reputationFailureReason);
             else FocusAnswer();
+            Changed?.Invoke();
+            return true;
+        }
+
+        // Presentation only. The adapter calls this once per replicated help-request sequence.
+        public void NotifyNetworkShake() => onShakeRequested.Invoke();
+
+        public void ApplyNetworkSnapshot(int questionIndex, int reputation, bool finished,
+            bool approved, string reason)
+        {
+            if (!networkMode) return;
+            bool questionChanged = QuestionIndex != questionIndex;
+            QuestionIndex = questionIndex;
+            Reputation = Mathf.Max(0, reputation);
+            RefreshReputation();
+            if (finished)
+            {
+                Finish(approved, reason);
+                return;
+            }
+            if (started && !IsFinished && questionChanged) ShowQuestion();
+            if (shakeButton != null) shakeButton.interactable = localInputAllowed && started && !IsFinished;
         }
 
         private void RefreshReputation()
@@ -174,6 +243,7 @@ namespace CarryOn.Taylor
             if (IsFinished) return;
             IsFinished = true;
             EntryApproved = approved;
+            ResultReason = reason ?? string.Empty;
             questionText.text = approved ? successMessage : failureMessage;
             answerInput.interactable = false;
             if (shakeButton != null) shakeButton.interactable = false;
@@ -187,6 +257,7 @@ namespace CarryOn.Taylor
             Finished?.Invoke();
             if (approved) onEntryApproved.Invoke();
             else onEntryDenied.Invoke();
+            Changed?.Invoke();
         }
     }
 }

@@ -10,6 +10,7 @@ using Unity.Services.Core;
 using Unity.Services.Relay;
 using Unity.Services.Relay.Models;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Game.Multiplayer
 {
@@ -18,6 +19,7 @@ namespace Game.Multiplayer
     public sealed class NetworkSessionManager : MonoBehaviour
     {
         public const int MaximumPlayers = 2;
+        public const string GameplaySceneName = "GameScene";
         private const int JoiningClientCapacity = MaximumPlayers - 1;
         private const int ConnectionTimeoutSeconds = 20;
         private const string RelayConnectionType = "dtls";
@@ -28,6 +30,7 @@ namespace Game.Multiplayer
         private CancellationTokenSource operationCancellation;
         private TaskCompletionSource<bool> connectionCompletion;
         private int operationVersion;
+        private NetworkSceneManager subscribedSceneManager;
 
         public event Action<ConnectionState, string> StateChanged;
         public event Action<IReadOnlyList<NetworkPlayerInfo>> PlayersChanged;
@@ -43,6 +46,9 @@ namespace Game.Multiplayer
             ? networkManager.LocalClientId
             : 0;
         public IReadOnlyList<NetworkPlayerInfo> Players => players;
+        public bool IsInGame { get; private set; }
+        public bool CanStartGame => IsHost && State == ConnectionState.Connected && !IsInGame &&
+            networkManager.ConnectedClientsIds.Count == MaximumPlayers;
 
         private void Awake()
         {
@@ -61,6 +67,62 @@ namespace Game.Multiplayer
             UnsubscribeFromNetworkEvents();
             if (networkManager != null && networkManager.ConnectionApprovalCallback == ApproveConnection)
                 networkManager.ConnectionApprovalCallback = null;
+        }
+
+        public void StartGame()
+        {
+            if (!CanStartGame) return;
+            IsInGame = true;
+            var result = networkManager.SceneManager.LoadScene(GameplaySceneName, LoadSceneMode.Additive);
+            if (result != SceneEventProgressStatus.Started)
+            {
+                IsInGame = false;
+                SetState(ConnectionState.Connected, $"Could not load GameScene: {result}");
+                return;
+            }
+            SetState(ConnectionState.Connected, "Loading GameScene...");
+        }
+
+        [ContextMenu("Return To Lobby (Host)")]
+        public void ReturnToLobby()
+        {
+            if (!IsHost || !IsInGame) return;
+            Scene scene = SceneManager.GetSceneByName(GameplaySceneName);
+            if (scene.IsValid() && scene.isLoaded)
+                networkManager.SceneManager.UnloadScene(scene);
+        }
+
+        private void SubscribeToSceneEvents()
+        {
+            if (subscribedSceneManager == networkManager.SceneManager) return;
+            if (subscribedSceneManager != null) subscribedSceneManager.OnSceneEvent -= OnNetworkSceneEvent;
+            subscribedSceneManager = networkManager.SceneManager;
+            if (subscribedSceneManager != null) subscribedSceneManager.OnSceneEvent += OnNetworkSceneEvent;
+        }
+
+        private void OnNetworkSceneEvent(SceneEvent sceneEvent)
+        {
+            if (sceneEvent.SceneName != GameplaySceneName) return;
+            if (sceneEvent.SceneEventType == SceneEventType.Load)
+            {
+                IsInGame = true;
+                SetState(ConnectionState.Connected, "Loading GameScene...");
+            }
+            else if (sceneEvent.SceneEventType == SceneEventType.UnloadEventCompleted)
+            {
+                IsInGame = false;
+                SetState(ConnectionState.Connected, "Returned to Lobby");
+            }
+        }
+
+        private void LateUpdate()
+        {
+            // Additive GameScene leaves the original lobby and its one NetworkManager intact.
+            if (!IsInGame || networkManager.IsListening || networkManager.ShutdownInProgress) return;
+            IsInGame = false;
+            Scene scene = SceneManager.GetSceneByName(GameplaySceneName);
+            if (scene.IsValid() && scene.isLoaded) SceneManager.UnloadSceneAsync(scene);
+            StateChanged?.Invoke(State, StatusMessage);
         }
 
         public async void CreateRoom()
@@ -85,6 +147,7 @@ namespace Game.Multiplayer
                 transport.SetRelayServerData(AllocationUtils.ToRelayServerData(allocation, RelayConnectionType));
                 if (!networkManager.StartHost())
                     throw new InvalidOperationException("Netcode could not start the Host.");
+                SubscribeToSceneEvents();
 
                 JoinCode = code;
                 JoinCodeChanged?.Invoke(JoinCode);
@@ -129,6 +192,7 @@ namespace Game.Multiplayer
                 SetState(ConnectionState.Connecting, "Connecting");
                 if (!networkManager.StartClient())
                     throw new InvalidOperationException("Netcode could not start the Client.");
+                SubscribeToSceneEvents();
 
                 Task timeout = Task.Delay(TimeSpan.FromSeconds(ConnectionTimeoutSeconds), operationCancellation.Token);
                 Task completed = await Task.WhenAny(connectionCompletion.Task, timeout);
@@ -156,6 +220,7 @@ namespace Game.Multiplayer
             }
         }
 
+        [ContextMenu("Leave Room")]
         public void LeaveRoom()
         {
             if (State == ConnectionState.Disconnecting)
@@ -241,6 +306,8 @@ namespace Game.Multiplayer
 
         private void UnsubscribeFromNetworkEvents()
         {
+            if (subscribedSceneManager != null) subscribedSceneManager.OnSceneEvent -= OnNetworkSceneEvent;
+            subscribedSceneManager = null;
             if (networkManager == null)
                 return;
             networkManager.OnClientConnectedCallback -= OnClientConnected;
@@ -253,10 +320,10 @@ namespace Game.Multiplayer
         {
             bool isLocalHost = request.ClientNetworkId == NetworkManager.ServerClientId;
             bool roomHasSpace = networkManager.ConnectedClientsIds.Count < MaximumPlayers;
-            response.Approved = isLocalHost || roomHasSpace;
+            response.Approved = isLocalHost || (roomHasSpace && !IsInGame);
             response.CreatePlayerObject = false;
             response.Pending = false;
-            response.Reason = response.Approved ? string.Empty : "Room Full";
+            response.Reason = response.Approved ? string.Empty : IsInGame ? "Game already in progress" : "Room Full";
         }
 
         private void OnClientConnected(ulong clientId)
