@@ -54,6 +54,9 @@ namespace CarryOn.Taylor
         public event Action Changed;
         public event Action<int, string> AnswerRequested;
         public event Action ShakeRequested;
+        public event Action ShakePresented;
+        public string CurrentQuestion => started && !IsFinished && questions != null &&
+            QuestionIndex >= 0 && QuestionIndex < questions.Length ? questions[QuestionIndex].question : string.Empty;
         private bool networkMode;
         private bool networkAuthority;
         private bool localInputAllowed = true;
@@ -206,7 +209,7 @@ namespace CarryOn.Taylor
             if (!started || IsFinished || session.Phase != EntryPhase.Interview) return false;
             Reputation = Mathf.Max(0, Reputation - Mathf.Max(1, shakePenalty));
             RefreshReputation();
-            if (!networkMode) onShakeRequested.Invoke();
+            if (!networkMode) NotifyNetworkShake();
             if (Reputation == 0) Finish(false, reputationFailureReason);
             else FocusAnswer();
             Changed?.Invoke();
@@ -214,7 +217,11 @@ namespace CarryOn.Taylor
         }
 
         // Presentation only. The adapter calls this once per replicated help-request sequence.
-        public void NotifyNetworkShake() => onShakeRequested.Invoke();
+        public void NotifyNetworkShake()
+        {
+            onShakeRequested.Invoke();
+            ShakePresented?.Invoke();
+        }
 
         public void ApplyNetworkSnapshot(int questionIndex, int reputation, bool finished,
             bool approved, string reason)

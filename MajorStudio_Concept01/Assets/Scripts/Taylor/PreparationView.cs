@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 
@@ -14,10 +15,12 @@ namespace CarryOn.Taylor
         [SerializeField] private TMP_Text printButtonLabel;
         [SerializeField] private GameObject printedCard;
         [SerializeField] private TMP_Text printedName, printedNationality, printedAge, printedLicense;
+        private readonly Dictionary<TMP_InputField, string> pendingEdits = new();
 
         public void Bind(PreparationSession source)
         {
             if (isActiveAndEnabled) OnDisable();
+            pendingEdits.Clear();
             session = source;
             if (isActiveAndEnabled) OnEnable();
         }
@@ -45,10 +48,17 @@ namespace CarryOn.Taylor
             ageInput?.onValueChanged.RemoveListener(EditAge);
             licenseInput?.onValueChanged.RemoveListener(EditLicense);
         }
-        private void EditName(string value) => session.RequestIdentityEdit(IdentityField.Name, value);
-        private void EditNationality(string value) => session.RequestIdentityEdit(IdentityField.Nationality, value);
-        private void EditAge(string value) => session.RequestIdentityEdit(IdentityField.Age, value);
-        private void EditLicense(string value) => session.RequestIdentityEdit(IdentityField.LicenseNumber, value);
+        private void EditName(string value) => Edit(nameInput, IdentityField.Name, value);
+        private void EditNationality(string value) => Edit(nationalityInput, IdentityField.Nationality, value);
+        private void EditAge(string value) => Edit(ageInput, IdentityField.Age, value);
+        private void EditLicense(string value) => Edit(licenseInput, IdentityField.LicenseNumber, value);
+
+        private void Edit(TMP_InputField input, IdentityField field, string value)
+        {
+            // Register before sending: local simulation can acknowledge synchronously.
+            pendingEdits[input] = value;
+            session.RequestIdentityEdit(field, value);
+        }
 
         private void Refresh()
         {
@@ -90,11 +100,23 @@ namespace CarryOn.Taylor
                     "Type into all four fields. Changes save automatically.";
             }
         }
-        private static void SetInput(TMP_InputField input, string value, bool editable)
+        private void SetInput(TMP_InputField input, string value, bool editable)
         {
             if (input == null) return;
-            input.SetTextWithoutNotify(value ?? string.Empty);
+            value ??= string.Empty;
             input.interactable = editable;
+            // Timer ticks and older network echoes must not overwrite a newer local draft,
+            // even after Tab/click moves focus to another field.
+            if (!editable) pendingEdits.Remove(input);
+            else if (pendingEdits.TryGetValue(input, out string pending))
+            {
+                if (value != pending) return;
+                pendingEdits.Remove(input);
+            }
+            // Never reassign the active editor (TMP may still be processing the keystroke).
+            // Print, phase changes and new-round resets still apply authoritative values.
+            if (editable && input.isFocused) return;
+            if (input.text != value) input.SetTextWithoutNotify(value);
         }
     }
 }
