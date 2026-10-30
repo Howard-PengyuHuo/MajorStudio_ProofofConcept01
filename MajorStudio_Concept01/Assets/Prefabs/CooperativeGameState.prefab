@@ -74,3 +74,4 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.CoopGameNetworkBridge
   ShowTopMostFoldoutHeaderGroup: 1
   gameplayCanvasPrefab: {fileID: 917159628884910850, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+  gameplaySynchronizationEnabled: 0

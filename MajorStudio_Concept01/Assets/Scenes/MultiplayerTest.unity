@@ -482,6 +482,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: ad77c68abaf84af6a3538970a3f4ca0d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.NetworkSessionManager
+  lobbyRoleSelectionPrefab: {fileID: 380184747901740296, guid: 26423f25e23324797ab35268bafd7158, type: 3}
 --- !u!114 &1512685247
 MonoBehaviour:
   m_ObjectHideFlags: 0
