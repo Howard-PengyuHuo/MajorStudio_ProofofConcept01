@@ -15,7 +15,6 @@ namespace Game.Multiplayer
         [SerializeField] private GameObject multiplayerCanvasPrefab;
 
         private NetworkSessionManager session;
-        private VoiceChatManager voice;
         private GameObject multiplayerCanvasInstance;
         private GameObject mainMenuPanel;
         private GameObject lobbyPanel;
@@ -35,7 +34,6 @@ namespace Game.Multiplayer
         private void Awake()
         {
             session = GetComponent<NetworkSessionManager>();
-            voice = GetComponent<VoiceChatManager>();
             initialized = InitializeInterface();
             if (!initialized)
             {
@@ -55,7 +53,6 @@ namespace Game.Multiplayer
             session.StateChanged += OnStateChanged;
             session.PlayersChanged += OnPlayersChanged;
             session.JoinCodeChanged += OnJoinCodeChanged;
-            if (voice != null) voice.Changed += OnVoiceChanged;
             RefreshAll();
         }
 
@@ -67,7 +64,6 @@ namespace Game.Multiplayer
             session.StateChanged -= OnStateChanged;
             session.PlayersChanged -= OnPlayersChanged;
             session.JoinCodeChanged -= OnJoinCodeChanged;
-            if (voice != null) voice.Changed -= OnVoiceChanged;
         }
 
         private void OnDestroy()
@@ -264,7 +260,6 @@ namespace Game.Multiplayer
 
             if (players.Count < NetworkSessionManager.MaximumPlayers && session.IsHost)
                 status.Append("\nWaiting for Player 2...");
-            if (voice != null) status.Append("\n\n").Append(voice.Status);
             playerStatusText.text = status.ToString();
             RefreshStartButton();
         }
@@ -274,8 +269,6 @@ namespace Game.Multiplayer
             startGameButton.gameObject.SetActive(session.IsHost);
             startGameButton.interactable = session.CanStartGame;
         }
-
-        private void OnVoiceChanged() => OnPlayersChanged(session.Players);
 
         private void OnJoinCodeChanged(string code)
         {
