@@ -14,7 +14,9 @@ namespace Game.Multiplayer
     public sealed class CoopGameNetworkBridge : NetworkBehaviour
     {
         [SerializeField] private GameObject gameplayCanvasPrefab;
-        private readonly NetworkVariable<CoopGameSnapshot> snapshot = new(default,
+        [Tooltip("Later gameplay stage. Leave disabled for role selection and waiting-room presentation only.")]
+        [SerializeField] private bool gameplaySynchronizationEnabled;
+        private readonly NetworkVariable<CoopGameSnapshot> snapshot = new(new CoopGameSnapshot { ResultReason = string.Empty },
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private readonly Dictionary<ulong, ulong> lastRequests = new();
         private GameObject presentation;
@@ -25,11 +27,15 @@ namespace Game.Multiplayer
         private uint appliedRound, appliedRevision, notifiedShake;
         private float nextDisplayRefresh;
         private bool ready, subscribed;
+        private NetworkSessionManager roleSession;
+        private bool rolePresentationApplied;
         private enum Request : byte { Start, Edit, Print, Answer, Shake }
 
         public CoopGameSnapshot CurrentState => snapshot.Value;
-        public PlayerRole LocalRole => NetworkManager.LocalClientId == snapshot.Value.TravelerId
-            ? PlayerRole.Traveler : PlayerRole.Hacker;
+        public bool GameplaySynchronizationEnabled => gameplaySynchronizationEnabled;
+        public PlayerRole LocalRole => roleSession != null && roleSession.RoleSelection != null &&
+            roleSession.RoleSelection.TryGetRole(NetworkManager.LocalClientId, out var role)
+                ? role : NetworkManager.LocalClientId == snapshot.Value.TravelerId ? PlayerRole.Traveler : PlayerRole.Hacker;
         public event Action HelpRequested;
 
         private void Awake()
@@ -62,6 +68,13 @@ namespace Game.Multiplayer
             if (preparation == null || preview == null || interview == null) return;
             if (FindAnyObjectByType<EventSystem>() == null)
                 new GameObject("EventSystem", typeof(EventSystem), typeof(InputSystemUIInputModule));
+            roleSession = NetworkManager.GetComponent<NetworkSessionManager>();
+            if (roleSession != null) roleSession.LobbyChanged += ApplySelectedRole;
+            if (!gameplaySynchronizationEnabled)
+            {
+                ApplySelectedRole();
+                return;
+            }
             snapshot.OnValueChanged += OnSnapshotChanged;
             preparation.StartRequested += RequestStart;
             preparation.IdentityEditRequested += RequestEdit;
@@ -101,7 +114,7 @@ namespace Game.Multiplayer
         [ContextMenu("Start New Round (Host)")]
         public void StartNewRound()
         {
-            if (!IsSpawned || !IsServer || !ready ||
+            if (!gameplaySynchronizationEnabled || !IsSpawned || !IsServer || !ready ||
                 NetworkManager.ConnectedClientsIds.Count != NetworkSessionManager.MaximumPlayers ||
                 (snapshot.Value.Round != 0 && !snapshot.Value.IsFinished)) return;
             CoopGameSnapshot state = snapshot.Value;
@@ -115,7 +128,7 @@ namespace Game.Multiplayer
 
         private void Update()
         {
-            if (!IsSpawned || preparation == null || snapshot.Value.Revision == 0) return;
+            if (!gameplaySynchronizationEnabled || !IsSpawned || preparation == null || snapshot.Value.Revision == 0) return;
             ExpirePreparation();
             if (snapshot.Value.Phase != EntryPhase.Preparation || Time.unscaledTime < nextDisplayRefresh) return;
             nextDisplayRefresh = Time.unscaledTime + 0.1f;
@@ -191,7 +204,7 @@ namespace Game.Multiplayer
 
         private void SendRequest(Request request, int argument = 0, string value = "")
         {
-            if (!IsSpawned || snapshot.Value.Revision == 0) return;
+            if (!gameplaySynchronizationEnabled || !IsSpawned || snapshot.Value.Revision == 0) return;
             GameplayRequestRpc(snapshot.Value.Round, ++nextRequest, request, argument, NetworkIdentity.Text(value));
         }
 
@@ -204,7 +217,7 @@ namespace Game.Multiplayer
 
         private void ProcessRequest(ulong sender, uint round, ulong requestId, Request request, int argument, string value)
         {
-            if (!IsServer || !ready || round != snapshot.Value.Round || requestId == 0 ||
+            if (!gameplaySynchronizationEnabled || !IsServer || !ready || round != snapshot.Value.Round || requestId == 0 ||
                 !NetworkManager.ConnectedClients.ContainsKey(sender)) return;
             if (lastRequests.TryGetValue(sender, out ulong last) && requestId <= last) return;
             lastRequests[sender] = requestId;
@@ -236,8 +249,34 @@ namespace Game.Multiplayer
 
         public override void OnNetworkDespawn() => Unsubscribe();
 
+        private void ApplySelectedRole()
+        {
+            if (gameplaySynchronizationEnabled || preparation == null || !IsSpawned) return;
+            if (roleSession == null || roleSession.RoleSelection == null ||
+                !roleSession.RoleSelection.TryGetRole(NetworkManager.LocalClientId, out var localRole))
+            {
+                presentation.SetActive(false);
+                rolePresentationApplied = false;
+                return;
+            }
+            // The persistent lobby NetworkObject is the sole authority for the local role.
+            // Keep this stage in Waiting: no timers, identity requests or interview RPC listeners.
+            if (!rolePresentationApplied)
+            {
+                preparation.ApplyNetworkSnapshot(EntryPhase.Waiting, 0, default, false, default);
+                interview.EnterNetworkMode(false);
+            }
+            preview.SetLocalRole(localRole);
+            if (!presentation.activeSelf) presentation.SetActive(true);
+            if (!rolePresentationApplied)
+                preparation.ApplyNetworkSnapshot(EntryPhase.Waiting, 0, default, false, default);
+            rolePresentationApplied = true;
+        }
+
         private void Unsubscribe()
         {
+            if (roleSession != null) roleSession.LobbyChanged -= ApplySelectedRole;
+            roleSession = null;
             if (subscribed)
             {
                 snapshot.OnValueChanged -= OnSnapshotChanged;

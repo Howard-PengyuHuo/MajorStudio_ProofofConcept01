@@ -1,5 +1,10 @@
 # Cooperative multiplayer integration
 
+Current stage (2026-10-29): see [RoleSelection.md](RoleSelection.md). Online gameplay now enters
+role-based, non-interactive Waiting UI after role selection and Ready confirmation. The gameplay
+synchronization described below and its older checks are historical hooks retained for a later
+stage; Gameplay Synchronization Enabled is disabled on the CooperativeGameState prefab.
+
 Open `Assets/Scenes/MultiplayerTest.unity`. Create a Relay room, join it from the second instance,
 and click **START GAME** on the Host once the Lobby shows 2/2. NGO loads `GameScene` additively
 on both peers. The lobby scene stays loaded, retaining its camera, EventSystem and persistent

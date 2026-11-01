@@ -18,6 +18,7 @@ namespace Game.Multiplayer
     [RequireComponent(typeof(NetworkManager), typeof(UnityTransport))]
     public sealed class NetworkSessionManager : MonoBehaviour
     {
+        [SerializeField] private LobbyRoleSelection lobbyRoleSelectionPrefab;
         public const int MaximumPlayers = 2;
         public const string GameplaySceneName = "GameScene";
         private const int JoiningClientCapacity = MaximumPlayers - 1;
@@ -35,6 +36,7 @@ namespace Game.Multiplayer
         public event Action<ConnectionState, string> StateChanged;
         public event Action<IReadOnlyList<NetworkPlayerInfo>> PlayersChanged;
         public event Action<string> JoinCodeChanged;
+        public event Action LobbyChanged;
 
         public ConnectionState State { get; private set; } = ConnectionState.Disconnected;
         public string StatusMessage { get; private set; } = "Disconnected";
@@ -47,8 +49,37 @@ namespace Game.Multiplayer
             : 0;
         public IReadOnlyList<NetworkPlayerInfo> Players => players;
         public bool IsInGame { get; private set; }
+        public LobbyRoleSelection RoleSelection { get; private set; }
         public bool CanStartGame => IsHost && State == ConnectionState.Connected && !IsInGame &&
-            networkManager.ConnectedClientsIds.Count == MaximumPlayers;
+            RoleSelection != null && RoleSelection.CanStartGame;
+
+        internal void RegisterRoleSelection(LobbyRoleSelection selection)
+        {
+            if (RoleSelection == selection) return;
+            if (RoleSelection != null) RoleSelection.Changed -= OnLobbyChanged;
+            RoleSelection = selection;
+            RoleSelection.Changed += OnLobbyChanged;
+            OnLobbyChanged();
+        }
+
+        internal void UnregisterRoleSelection(LobbyRoleSelection selection)
+        {
+            if (RoleSelection != selection) return;
+            RoleSelection.Changed -= OnLobbyChanged;
+            RoleSelection = null;
+            OnLobbyChanged();
+        }
+
+        private void OnLobbyChanged() => LobbyChanged?.Invoke();
+
+        private void SpawnRoleSelection()
+        {
+            if (RoleSelection != null && RoleSelection.IsSpawned) return;
+            if (lobbyRoleSelectionPrefab == null)
+                throw new InvalidOperationException("Assign the LobbyRoleSelection network prefab before creating a room.");
+            var selection = Instantiate(lobbyRoleSelectionPrefab);
+            selection.GetComponent<NetworkObject>().Spawn(destroyWithScene: false);
+        }
 
         private void Awake()
         {
@@ -71,12 +102,13 @@ namespace Game.Multiplayer
 
         public void StartGame()
         {
-            if (!CanStartGame) return;
+            if (!CanStartGame || !RoleSelection.TryLockForStart()) return;
             IsInGame = true;
             var result = networkManager.SceneManager.LoadScene(GameplaySceneName, LoadSceneMode.Additive);
             if (result != SceneEventProgressStatus.Started)
             {
                 IsInGame = false;
+                RoleSelection.UnlockAfterFailedStart();
                 SetState(ConnectionState.Connected, $"Could not load GameScene: {result}");
                 return;
             }
@@ -111,6 +143,7 @@ namespace Game.Multiplayer
             else if (sceneEvent.SceneEventType == SceneEventType.UnloadEventCompleted)
             {
                 IsInGame = false;
+                if (IsHost) RoleSelection?.ReturnToLobby();
                 SetState(ConnectionState.Connected, "Returned to Lobby");
             }
         }
@@ -148,6 +181,7 @@ namespace Game.Multiplayer
                 if (!networkManager.StartHost())
                     throw new InvalidOperationException("Netcode could not start the Host.");
                 SubscribeToSceneEvents();
+                SpawnRoleSelection();
 
                 JoinCode = code;
                 JoinCodeChanged?.Invoke(JoinCode);

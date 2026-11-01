@@ -25,6 +25,9 @@ namespace Game.Multiplayer
         private Button leaveButton;
         private Button exitBackButton;
         private Button startGameButton;
+        private GameObject roleSelectionPanel;
+        private Button travelerButton, hackerButton, releaseRoleButton, readyButton;
+        private Text roleAssignmentsText, roleSelectionStatus, readyButtonLabel;
         private Text menuStatusText;
         private Text joinCodeText;
         private Text playerCountText;
@@ -53,6 +56,7 @@ namespace Game.Multiplayer
             session.StateChanged += OnStateChanged;
             session.PlayersChanged += OnPlayersChanged;
             session.JoinCodeChanged += OnJoinCodeChanged;
+            session.LobbyChanged += RefreshRoles;
             RefreshAll();
         }
 
@@ -64,6 +68,7 @@ namespace Game.Multiplayer
             session.StateChanged -= OnStateChanged;
             session.PlayersChanged -= OnPlayersChanged;
             session.JoinCodeChanged -= OnJoinCodeChanged;
+            session.LobbyChanged -= RefreshRoles;
         }
 
         private void OnDestroy()
@@ -102,6 +107,15 @@ namespace Game.Multiplayer
             valid &= TryBind(root, "JoinCodeText", out joinCodeText);
             valid &= TryBind(root, "PlayerCountText", out playerCountText);
             valid &= TryBind(root, "PlayerStatusText", out playerStatusText);
+            valid &= TryBind(root, "RoleSelectionPanel", out roleSelectionPanel);
+            valid &= TryBind(root, "TravelerRoleButton", out travelerButton);
+            valid &= TryBind(root, "HackerRoleButton", out hackerButton);
+            valid &= TryBind(root, "ReleaseRoleButton", out releaseRoleButton);
+            valid &= TryBind(root, "ReadyButton", out readyButton);
+            valid &= TryBind(root, "RoleAssignmentsText", out roleAssignmentsText);
+            valid &= TryBind(root, "RoleSelectionStatus", out roleSelectionStatus);
+            if (readyButton != null) readyButtonLabel = readyButton.GetComponentInChildren<Text>(true);
+            valid &= readyButtonLabel != null;
 
             if (!valid)
                 Debug.LogError($"{nameof(LobbyUI)} could not bind the required controls in " +
@@ -191,6 +205,10 @@ namespace Game.Multiplayer
             exitBackButton.onClick.AddListener(LeaveRoom);
             startGameButton.onClick.RemoveListener(StartGame);
             startGameButton.onClick.AddListener(StartGame);
+            travelerButton.onClick.AddListener(SelectTraveler);
+            hackerButton.onClick.AddListener(SelectHacker);
+            releaseRoleButton.onClick.AddListener(ReleaseRole);
+            readyButton.onClick.AddListener(ToggleReady);
         }
 
         private void UnbindButtonListeners()
@@ -201,7 +219,16 @@ namespace Game.Multiplayer
             leaveButton.onClick.RemoveListener(LeaveRoom);
             exitBackButton.onClick.RemoveListener(LeaveRoom);
             startGameButton.onClick.RemoveListener(StartGame);
+            travelerButton.onClick.RemoveListener(SelectTraveler);
+            hackerButton.onClick.RemoveListener(SelectHacker);
+            releaseRoleButton.onClick.RemoveListener(ReleaseRole);
+            readyButton.onClick.RemoveListener(ToggleReady);
         }
+
+        private void SelectTraveler() => session.RoleSelection?.SelectRole(LobbyRole.Traveler);
+        private void SelectHacker() => session.RoleSelection?.SelectRole(LobbyRole.Hacker);
+        private void ReleaseRole() => session.RoleSelection?.ReleaseRole();
+        private void ToggleReady() => session.RoleSelection?.ToggleReady();
 
         private void StartGame() => session.StartGame();
 
@@ -233,12 +260,40 @@ namespace Game.Multiplayer
             bool showLobby = state == ConnectionState.Connected;
             mainMenuPanel.SetActive(!showLobby);
             lobbyPanel.SetActive(showLobby);
+            roleSelectionPanel.SetActive(showLobby);
             menuStatusText.text = message;
             createButton.interactable = !session.IsBusy;
             joinButton.interactable = !session.IsBusy;
             joinCodeInput.interactable = !session.IsBusy;
             RefreshStartButton();
+            RefreshRoles();
         }
+
+        private void RefreshRoles()
+        {
+            var selection = session.RoleSelection;
+            var state = selection != null ? selection.Current : default;
+            roleAssignmentsText.text = DescribeSelection("Host", state.Host) + "\n\n" +
+                DescribeSelection("Client", state.Client);
+            bool hasPlayer = false;
+            LobbyPlayerSelection local = default;
+            if (selection != null) hasPlayer = selection.TryGetLocalPlayer(out local);
+            bool unlocked = hasPlayer && !state.GameStarted && !session.IsInGame && !selection.HasPendingRequest;
+            bool canSelect = unlocked && !local.Ready;
+            travelerButton.interactable = canSelect && local.Role != LobbyRole.Traveler &&
+                !state.IsOccupied(LobbyRole.Traveler, local.ClientId);
+            hackerButton.interactable = canSelect && local.Role != LobbyRole.Hacker &&
+                !state.IsOccupied(LobbyRole.Hacker, local.ClientId);
+            releaseRoleButton.interactable = canSelect && local.Role != LobbyRole.Unassigned;
+            readyButton.interactable = unlocked && local.Role != LobbyRole.Unassigned;
+            readyButtonLabel.text = local.Ready ? "CANCEL READY" : "READY";
+            roleSelectionStatus.text = selection != null ? selection.Feedback : "Synchronizing Lobby roles...";
+            RefreshStartButton();
+        }
+
+        private static string DescribeSelection(string connection, LobbyPlayerSelection player) => player.Connected
+            ? $"{connection} (Client ID {player.ClientId})\n{player.Role} - {(player.Ready ? "Ready" : "Not Ready")}"
+            : $"{connection}: Disconnected\nRole available";
 
         private void OnPlayersChanged(IReadOnlyList<NetworkPlayerInfo> players)
         {
