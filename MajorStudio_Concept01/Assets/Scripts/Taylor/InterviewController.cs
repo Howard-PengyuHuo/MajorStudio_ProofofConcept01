@@ -15,6 +15,8 @@ namespace CarryOn.Taylor
         public AnswerSource answerSource;
         [Tooltip("Used only when Answer Source is Fixed Answer.")]
         public string answer;
+        [Min(0.1f), Tooltip("Time allowed for this question, in seconds.")]
+        public float timeLimitSeconds = 30f;
     }
 
     // Demonstration logic only; network authority can replace the local submission later.
@@ -63,6 +65,27 @@ namespace CarryOn.Taylor
         private bool started;
         private IdentityCard identity;
         private int lastSubmitFrame = -1;
+        private Func<double> networkClock;
+        public double QuestionEndsAt { get; private set; }
+        private double Clock => networkMode && networkClock != null ? networkClock() : Time.unscaledTimeAsDouble;
+        public float QuestionSecondsRemaining => started && !IsFinished && QuestionEndsAt > 0
+            ? (float)Math.Max(0, QuestionEndsAt - Clock) : 0;
+        public bool QuestionTimerRunning => started && !IsFinished && QuestionEndsAt > 0;
+        public void SetNetworkClock(Func<double> clock) => networkClock = clock;
+
+        private void Update()
+        {
+            if (!networkMode) ExpireQuestion();
+        }
+
+        // The network adapter calls this before accepting answers as well as every frame.
+        public bool ExpireQuestion()
+        {
+            if (networkMode && !networkAuthority) return false;
+            if (!QuestionTimerRunning || Clock < QuestionEndsAt) return false;
+            Finish(false, "You did not answer the question in time.");
+            return true;
+        }
 
         public void EnterNetworkMode(bool canSubmit, bool isAuthority = false)
         {
@@ -100,6 +123,7 @@ namespace CarryOn.Taylor
         {
             if (session.Phase == EntryPhase.Interview) return;
             started = false;
+            QuestionEndsAt = 0;
             IsFinished = false;
             EntryApproved = false;
             ResultReason = string.Empty;
@@ -153,6 +177,7 @@ namespace CarryOn.Taylor
         public bool EvaluateAnswer(string value)
         {
             if (networkMode && !networkAuthority) return false;
+            if (ExpireQuestion()) return true;
             if (!started || IsFinished || session.Phase != EntryPhase.Interview ||
                 string.IsNullOrWhiteSpace(value) || questions == null ||
                 QuestionIndex < 0 || QuestionIndex >= questions.Length) return false;
@@ -173,6 +198,8 @@ namespace CarryOn.Taylor
 
         private void ShowQuestion()
         {
+            if (!networkMode || networkAuthority)
+                QuestionEndsAt = Clock + Mathf.Max(0.1f, questions[QuestionIndex].timeLimitSeconds);
             questionText.text = questions[QuestionIndex].question;
             answerInput.interactable = localInputAllowed;
             answerInput.SetTextWithoutNotify("");
@@ -224,7 +251,7 @@ namespace CarryOn.Taylor
         }
 
         public void ApplyNetworkSnapshot(int questionIndex, int reputation, bool finished,
-            bool approved, string reason)
+            bool approved, string reason, double questionEndsAt = 0)
         {
             if (!networkMode) return;
             bool questionChanged = QuestionIndex != questionIndex;
@@ -237,6 +264,7 @@ namespace CarryOn.Taylor
                 return;
             }
             if (started && !IsFinished && questionChanged) ShowQuestion();
+            QuestionEndsAt = questionEndsAt;
             if (shakeButton != null) shakeButton.interactable = localInputAllowed && started && !IsFinished;
         }
 

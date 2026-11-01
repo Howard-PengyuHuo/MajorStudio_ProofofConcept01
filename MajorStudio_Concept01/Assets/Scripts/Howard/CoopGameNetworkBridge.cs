@@ -55,6 +55,7 @@ namespace Game.Multiplayer
             }
             preparation.EnterNetworkMode();
             interview.EnterNetworkMode(false);
+            interview.SetNetworkClock(() => NetworkManager.ServerTime.Time);
         }
 
         public override void OnNetworkSpawn()
@@ -117,6 +118,7 @@ namespace Game.Multiplayer
         {
             if (!IsSpawned || preparation == null || snapshot.Value.Revision == 0) return;
             ExpirePreparation();
+            ExpireInterview();
             if (snapshot.Value.Phase != EntryPhase.Preparation || Time.unscaledTime < nextDisplayRefresh) return;
             nextDisplayRefresh = Time.unscaledTime + 0.1f;
             ApplyPreparation(snapshot.Value);
@@ -140,6 +142,7 @@ namespace Game.Multiplayer
             state.PrintedIdentity = new NetworkIdentity(preparation.PrintedIdentity);
             state.HasPrintedIdentity = preparation.HasPrintedIdentity;
             state.QuestionIndex = interview.QuestionIndex;
+            state.QuestionEndsAt = interview.QuestionEndsAt;
             state.Reputation = interview.Reputation;
             state.IsFinished = interview.IsFinished;
             state.EntryApproved = interview.EntryApproved;
@@ -154,6 +157,7 @@ namespace Game.Multiplayer
             if (state.Revision == 0 || state.Revision <= appliedRevision || preparation == null) return;
             appliedRevision = state.Revision;
             bool traveler = NetworkManager.LocalClientId == state.TravelerId;
+            FindFirstObjectByType<VoiceChatManager>()?.BeginSpeechRound(state.Round, !traveler);
             interview.EnterNetworkMode(traveler, IsServer);
             if (state.Round != appliedRound)
             {
@@ -166,7 +170,7 @@ namespace Game.Multiplayer
             if (!presentation.activeSelf) presentation.SetActive(true);
             ApplyPreparation(state);
             interview.ApplyNetworkSnapshot(state.QuestionIndex, state.Reputation,
-                state.IsFinished, state.EntryApproved, state.ResultReason);
+                state.IsFinished, state.EntryApproved, state.ResultReason, state.QuestionEndsAt);
             while (notifiedShake < state.ShakeSequence)
             {
                 notifiedShake++;
@@ -184,6 +188,12 @@ namespace Game.Multiplayer
         }
 
         private void RequestStart() => SendRequest(Request.Start);
+
+        private void ExpireInterview()
+        {
+            if (IsServer && snapshot.Value.Phase == EntryPhase.Interview && interview.ExpireQuestion())
+                Publish(snapshot.Value);
+        }
         private void RequestEdit(IdentityField field, string value) => SendRequest(Request.Edit, (int)field, value);
         private void RequestPrint() => SendRequest(Request.Print);
         private void RequestAnswer(int question, string value) => SendRequest(Request.Answer, question, value?.Trim());
@@ -209,6 +219,7 @@ namespace Game.Multiplayer
             if (lastRequests.TryGetValue(sender, out ulong last) && requestId <= last) return;
             lastRequests[sender] = requestId;
             ExpirePreparation(); // A request arriving after the deadline cannot slip in before Update.
+            ExpireInterview();
             CoopGameSnapshot state = snapshot.Value;
             if (request == Request.Start)
             {

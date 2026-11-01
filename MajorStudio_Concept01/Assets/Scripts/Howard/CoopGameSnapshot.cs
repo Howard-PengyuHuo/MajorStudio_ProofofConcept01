@@ -50,6 +50,7 @@ namespace Game.Multiplayer
         public ulong TravelerId, HackerId;
         public EntryPhase Phase;
         public double PreparationEndsAt;
+        public double QuestionEndsAt;
         public NetworkIdentity Identity, PrintedIdentity;
         public bool HasPrintedIdentity, IsFinished, EntryApproved;
         public int QuestionIndex, Reputation;
@@ -64,6 +65,7 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref HackerId);
             serializer.SerializeValue(ref Phase);
             serializer.SerializeValue(ref PreparationEndsAt);
+            serializer.SerializeValue(ref QuestionEndsAt);
             serializer.SerializeValue(ref Identity);
             serializer.SerializeValue(ref PrintedIdentity);
             serializer.SerializeValue(ref HasPrintedIdentity);
@@ -77,6 +79,7 @@ namespace Game.Multiplayer
         public bool Equals(CoopGameSnapshot other) => Round == other.Round && Revision == other.Revision
             && ShakeSequence == other.ShakeSequence && TravelerId == other.TravelerId && HackerId == other.HackerId
             && Phase == other.Phase && PreparationEndsAt.Equals(other.PreparationEndsAt)
+            && QuestionEndsAt.Equals(other.QuestionEndsAt)
             && Identity.Equals(other.Identity) && PrintedIdentity.Equals(other.PrintedIdentity)
             && HasPrintedIdentity == other.HasPrintedIdentity && IsFinished == other.IsFinished
             && EntryApproved == other.EntryApproved && QuestionIndex == other.QuestionIndex
