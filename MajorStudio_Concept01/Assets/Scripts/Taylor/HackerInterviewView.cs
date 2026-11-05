@@ -7,7 +7,12 @@ namespace CarryOn.Taylor
     public class HackerInterviewView : MonoBehaviour
     {
         [SerializeField] private PreparationSession session;
-        [SerializeField] private TMP_Text nameText, nationalityText, ageText, licenseText;
+        [SerializeField] private TMP_Text nameText;
+        [UnityEngine.Serialization.FormerlySerializedAs("nationalityText"), SerializeField] private TMP_Text birthPlaceText;
+        [UnityEngine.Serialization.FormerlySerializedAs("ageText"), SerializeField] private TMP_Text issueDateText;
+        [UnityEngine.Serialization.FormerlySerializedAs("licenseText"), SerializeField] private TMP_Text passportCodeText;
+        [SerializeField] private TMP_Text expiryDateText;
+        [SerializeField] private TMP_Text birthdayText;
         [SerializeField] private InterviewController interview;
         [SerializeField] private TMP_Text currentQuestionText;
         [SerializeField] private RectTransform shakeRoot;
@@ -75,9 +80,11 @@ namespace CarryOn.Taylor
         {
             var card = session.HasPrintedIdentity ? session.PrintedIdentity : session.Identity;
             if (nameText != null) nameText.text = card.Name ?? "";
-            if (nationalityText != null) nationalityText.text = card.Nationality ?? "";
-            if (ageText != null) ageText.text = card.Age ?? "";
-            if (licenseText != null) licenseText.text = card.LicenseNumber ?? "";
+            if (birthPlaceText != null) birthPlaceText.text = card.BirthPlace ?? "";
+            if (issueDateText != null) issueDateText.text = card.IssueDate ?? "";
+            if (expiryDateText != null) expiryDateText.text = card.ExpiryDate ?? "";
+            if (birthdayText != null) birthdayText.text = card.Birthday ?? "";
+            if (passportCodeText != null) passportCodeText.text = card.PassportCode ?? "";
         }
     }
 }

@@ -374,6 +374,7 @@ GameObject:
   - component: {fileID: 1512685243}
   - component: {fileID: 1512685246}
   - component: {fileID: 1512685247}
+  - component: {fileID: 1512685248}
   m_Layer: 0
   m_Name: NetworkManager
   m_TagString: Untagged
@@ -496,6 +497,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.LobbyUI
   multiplayerCanvasPrefab: {fileID: 6746314474815652869, guid: bd205babbcb8d46f7bd6d82037bcabb0, type: 3}
+--- !u!114 &1512685248
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1512685242}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: abd0e9865a7fc1a49a7e261ccf2a9391, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.VoiceChatManager
+  microphoneMuted: 0
+  hackerSpeechSeconds: 10
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0

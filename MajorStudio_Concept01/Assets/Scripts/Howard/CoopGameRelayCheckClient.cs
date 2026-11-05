@@ -47,9 +47,11 @@ namespace Game.Multiplayer
                 bridge.HelpRequested += () => helps++;
                 interview.Finished += () => finished++;
                 preparation.RequestIdentityEdit(IdentityField.Name, "Relay Alice");
-                preparation.RequestIdentityEdit(IdentityField.Nationality, "Canada");
-                preparation.RequestIdentityEdit(IdentityField.Age, "28");
-                preparation.RequestIdentityEdit(IdentityField.LicenseNumber, "RELAY-42");
+                preparation.RequestIdentityEdit(IdentityField.BirthPlace, "Canada");
+                preparation.RequestIdentityEdit(IdentityField.IssueDate, "1977-11-02");
+                preparation.RequestIdentityEdit(IdentityField.ExpiryDate, "1979-11-02");
+                preparation.RequestIdentityEdit(IdentityField.Birthday, "1950-04-12");
+                preparation.RequestIdentityEdit(IdentityField.PassportCode, "RELAY-42");
                 await Until(() => preparation.CanPrint, "Identity echo and CanPrint");
                 preparation.RequestPrint();
                 await Until(() => preparation.HasPrintedIdentity, "Print echo");

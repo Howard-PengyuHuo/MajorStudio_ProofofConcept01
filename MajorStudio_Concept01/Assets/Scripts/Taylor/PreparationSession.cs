@@ -5,19 +5,20 @@ namespace CarryOn.Taylor
 {
     public enum EntryPhase { Waiting, Preparation, Interview }
     public enum PlayerRole { Traveler, Hacker }
-    public enum IdentityField { Name, Nationality, Age, LicenseNumber }
+    public enum IdentityField { Name, BirthPlace, IssueDate, PassportCode, ExpiryDate, Birthday }
 
     [Serializable]
     public struct IdentityCard
     {
-        public string Name, Nationality, Age, LicenseNumber;
+        public string Name, BirthPlace, IssueDate, PassportCode, ExpiryDate, Birthday;
         public bool IsComplete => !string.IsNullOrWhiteSpace(Name) &&
-            !string.IsNullOrWhiteSpace(Nationality) && !string.IsNullOrWhiteSpace(Age) &&
-            !string.IsNullOrWhiteSpace(LicenseNumber);
+            !string.IsNullOrWhiteSpace(BirthPlace) && !string.IsNullOrWhiteSpace(IssueDate) &&
+            !string.IsNullOrWhiteSpace(PassportCode) && !string.IsNullOrWhiteSpace(ExpiryDate) &&
+            !string.IsNullOrWhiteSpace(Birthday);
     }
 
     /// <summary>Local prototype authority. A network adapter can disable local timing and apply snapshots.</summary>
-    public class PreparationSession : MonoBehaviour
+    public partial class PreparationSession : MonoBehaviour
     {
         [SerializeField, Min(1)] private float preparationSeconds = 60;
         [SerializeField] private bool localSimulation = true;
@@ -27,7 +28,8 @@ namespace CarryOn.Taylor
         public IdentityCard Identity { get; private set; }
         public IdentityCard PrintedIdentity { get; private set; }
         public bool HasPrintedIdentity { get; private set; }
-        public bool CanPrint => Phase == EntryPhase.Preparation && Identity.IsComplete && !HasPrintedIdentity;
+        public bool CanPrint => Phase == EntryPhase.Preparation && Identity.IsComplete && !HasPrintedIdentity &&
+            PassportDate.TryNormalizeCard(Identity, out _);
         public bool HackerCanReadRulesDuringPreparation => hackerCanReadRulesDuringPreparation;
         public bool LocalSimulation => localSimulation;
         public float PreparationSeconds => preparationSeconds;
@@ -56,6 +58,9 @@ namespace CarryOn.Taylor
 
         public void BeginPreparation(float duration)
         {
+            Government = default;
+            PrintedGovernment = default;
+            HasPrintedGovernment = false;
             Identity = new IdentityCard();
             PrintedIdentity = new IdentityCard();
             HasPrintedIdentity = false;
@@ -82,9 +87,11 @@ namespace CarryOn.Taylor
             switch (field)
             {
                 case IdentityField.Name: card.Name = value; break;
-                case IdentityField.Nationality: card.Nationality = value; break;
-                case IdentityField.Age: card.Age = value; break;
-                case IdentityField.LicenseNumber: card.LicenseNumber = value; break;
+                case IdentityField.BirthPlace: card.BirthPlace = value; break;
+                case IdentityField.IssueDate: card.IssueDate = value; break;
+                case IdentityField.PassportCode: card.PassportCode = value; break;
+                case IdentityField.ExpiryDate: card.ExpiryDate = value; break;
+                case IdentityField.Birthday: card.Birthday = value; break;
                 default: return;
             }
             Identity = card;
@@ -102,7 +109,9 @@ namespace CarryOn.Taylor
         public void PrintIdentity()
         {
             if (!CanPrint) return;
-            PrintedIdentity = Identity;
+            if (!PassportDate.TryNormalizeCard(Identity, out var normalized)) return;
+            Identity = normalized;
+            PrintedIdentity = normalized;
             HasPrintedIdentity = true;
             Changed?.Invoke();
         }
