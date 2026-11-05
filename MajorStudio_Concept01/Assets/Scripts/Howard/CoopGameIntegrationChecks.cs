@@ -33,11 +33,14 @@ namespace Game.Multiplayer.Editor
                 return;
             }
             GameObject prefab = AssetDatabase.LoadAssetAtPath<GameObject>(CoopGameSceneSetup.BridgePrefabPath);
+            var rolesPrefab = AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/LobbyRoleSelection.prefab");
+            if (rolesPrefab == null) throw new InvalidOperationException("LobbyRoleSelection prefab is required.");
             if (prefab == null) throw new InvalidOperationException("Run Configure Integration Assets first.");
             running = true;
             checks = 0;
             NetworkManager client = null;
             CoopGameNetworkBridge authority = null;
+            LobbyRoleSelection roles = null;
             GameObject offline = null;
             bool sceneManagement = host.NetworkConfig.EnableSceneManagement;
             bool samePrefabs = host.NetworkConfig.ForceSamePrefabs;
@@ -52,6 +55,7 @@ namespace Game.Multiplayer.Editor
                 host.NetworkConfig.EnableSceneManagement = false;
                 host.NetworkConfig.ForceSamePrefabs = false;
                 if (!host.NetworkConfig.Prefabs.Contains(prefab)) host.AddNetworkPrefab(prefab);
+                if (!host.NetworkConfig.Prefabs.Contains(rolesPrefab)) host.AddNetworkPrefab(rolesPrefab);
                 Check(host.StartHost(), "NGO Host started on loopback");
                 var clientObject = new GameObject("LoopbackCheckClient");
                 clientObject.SetActive(false);
@@ -65,9 +69,12 @@ namespace Game.Multiplayer.Editor
                 clientObject.SetActive(true);
                 clientTransport.SetConnectionData("127.0.0.1", 17983);
                 client.AddNetworkPrefab(prefab);
+                client.AddNetworkPrefab(rolesPrefab);
                 Check(client.StartClient(), "NGO Client started");
                 await Until(() => client.IsConnectedClient && host.ConnectedClientsIds.Count == 2, "Host/Client connected");
                 if (lobby != null) lobby.SetActive(false);
+                roles = UnityEngine.Object.Instantiate(rolesPrefab).GetComponent<LobbyRoleSelection>();
+                roles.GetComponent<NetworkObject>().Spawn();
                 authority = UnityEngine.Object.Instantiate(prefab).GetComponent<CoopGameNetworkBridge>();
                 authority.GetComponent<NetworkObject>().Spawn();
                 CoopGameNetworkBridge remote = null;
@@ -101,26 +108,91 @@ namespace Game.Multiplayer.Editor
                 hostPreparation.RequestIdentityEdit(IdentityField.Name, "Unauthorized");
                 await Task.Delay(150);
                 Check(string.IsNullOrEmpty(hostPreparation.Identity.Name), "Traveler identity edits rejected");
-                clientPreparation.RequestIdentityEdit(IdentityField.Name, "Alice");
-                clientPreparation.RequestIdentityEdit(IdentityField.Nationality, "Canada");
-                clientPreparation.RequestIdentityEdit(IdentityField.Age, "28");
-                clientPreparation.RequestIdentityEdit(IdentityField.LicenseNumber, "ID-42");
-                await Until(() => hostPreparation.Identity.IsComplete && clientPreparation.CanPrint, "All four identity fields replicated");
-                clientPreparation.RequestPrint();
+                hostPreparation.RequestGovernmentEdit(GovernmentField.Name, "Unauthorized");
+                await Task.Delay(100);
+                Check(string.IsNullOrEmpty(hostPreparation.Government.Name), "Traveler government edits rejected");
+                var governmentView = remote.GetComponentInChildren<PreparationPreview>(true);
+                var governmentEditor = Get<GameObject>(governmentView, "hacker").GetComponent<GovernmentDocumentView>();
+                Get<TMPro.TMP_InputField>(governmentEditor, "nameInput").text = "Alice";
+                Get<TMPro.TMP_InputField>(governmentEditor, "nationalityInput").text = "Enlaslov";
+                Get<TMPro.TMP_InputField>(governmentEditor, "positionInput").text = "Cultural Attache";
+                await Until(() => hostPreparation.Government.Position == "Cultural Attache", "Government text replicated");
+                clientPreparation.RequestGovernmentPrint();
+                clientPreparation.RequestGovernmentEdit(GovernmentField.Category, "99");
+                await Task.Delay(100);
+                Check(!hostPreparation.HasPrintedGovernment && hostPreparation.Government.Category == TaskCategory.None,
+                    "Missing/invalid category cannot print");
+                Get<UnityEngine.UI.Button[]>(governmentEditor, "categoryButtons")[1].onClick.Invoke();
+                // Enter immediately after selecting: must wait for the category acknowledgement.
+                Get<TMPro.TMP_InputField>(governmentEditor, "positionInput").onSubmit.Invoke("Cultural Attache");
+                await Until(() => hostPreparation.HasPrintedGovernment && clientPreparation.HasPrintedGovernment,
+                    "Government print replicated");
+                Check(hostPreparation.PrintedGovernment.Category == TaskCategory.CulturalConnection &&
+                    clientPreparation.PrintedGovernment.Position == "Cultural Attache", "Printed category and text preserved");
+                Check(!hostPreparation.HasPrintedIdentity && !Get<TMPro.TMP_InputField>(governmentEditor, "nameInput").interactable,
+                    "Government locks independently of passport");
+                var travelerGovernment = Get<GameObject>(authority.GetComponentInChildren<PreparationPreview>(true), "traveler")
+                    .GetComponent<GovernmentDocumentView>();
+                Check(Get<GameObject>(travelerGovernment, "document").activeSelf &&
+                    Get<UnityEngine.UI.Image[]>(travelerGovernment, "categoryCircles")[1].gameObject.activeSelf,
+                    "Traveler sees printed government document and circle");
+                clientPreparation.RequestGovernmentEdit(GovernmentField.Name, "After print");
+                await Task.Delay(100);
+                Check(hostPreparation.Government.Name == "Alice", "Government edits rejected after print");
+                var hackerView = remote.transform.GetComponentInChildren<PreparationPreview>(true);
+                var hackerPanel = Get<GameObject>(hackerView, "hacker");
+                var printView = hackerPanel.GetComponent<PreparationView>();
+                var nameField = Get<TMPro.TMP_InputField>(printView, "nameInput");
+                nameField.onSubmit.Invoke("");
+                await Task.Delay(100);
+                Check(!hostPreparation.HasPrintedIdentity && nameField.isFocused &&
+                    nameField.GetComponent<UnityEngine.UI.Outline>().enabled,
+                    "Enter on incomplete document highlights and focuses missing field");
+                nameField.text = "Alice";
+                Get<TMPro.TMP_InputField>(printView, "birthPlaceInput").text = "Enlaslov";
+                Get<TMPro.TMP_InputField>(printView, "issueDateInput").text = "1977-11-02";
+                var expiryField = Get<TMPro.TMP_InputField>(printView, "expiryDateInput");
+                Check(expiryField != null, "Bind the new Expiry Date Input in the Canvas before running UI integration checks");
+                expiryField.text = "1979-11-02";
+                Get<TMPro.TMP_InputField>(printView, "birthdayInput").text = "1950-04-12";
+                Get<TMPro.TMP_InputField>(printView, "passportCodeInput").text = "ID-42";
+                // Submit from the first field immediately, while the final edits are still in flight.
+                nameField.onSubmit.Invoke(nameField.text);
                 await Until(() => hostPreparation.HasPrintedIdentity && clientPreparation.HasPrintedIdentity, "Print replicated");
                 Check(hostPreparation.PrintedIdentity.Name == "Alice", "Printed identity matches current identity");
+                Check(hostPreparation.PrintedIdentity.Birthday == "1950-04-12" &&
+                    clientPreparation.PrintedIdentity.Birthday == "1950-04-12", "Birthday printed and replicated");
+                Check(hostPreparation.PrintedIdentity.IssueDate == "1977-11-02" &&
+                    hostPreparation.PrintedIdentity.ExpiryDate == "1979-11-02" &&
+                    clientPreparation.PrintedIdentity.ExpiryDate == "1979-11-02", "Passport dates survive printing and replication");
+                Check(hostPreparation.PrintedIdentity.PassportCode == "ID-42" && !nameField.interactable &&
+                    Get<GameObject>(printView, "printedStamp").activeSelf, "Enter waits for final edit, locks document and displays stamp");
                 clientPreparation.RequestIdentityEdit(IdentityField.Name, "Changed after print");
                 clientPreparation.RequestPrint();
                 await Task.Delay(150);
                 Check(hostPreparation.Identity.Name == "Alice", "Printed identity locked and repeat Print ignored");
                 Expire(authority);
                 await Until(() => clientPreparation.Phase == EntryPhase.Interview, "Interview phase replicated atomically with printed identity");
+                Check(hostInterview.IsShowingIntroduction && clientInterview.IsShowingIntroduction &&
+                    !hostInterview.QuestionTimerRunning && !clientInterview.QuestionTimerRunning,
+                    "Introduction shown on both peers without question countdown");
+                Check(!hostInterview.EvaluateAnswer("Alice") && hostInterview.QuestionIndex == 0,
+                    "Answers cannot bypass introduction");
+                Check(Math.Abs(hostInterview.IntroductionEndsAt - clientInterview.IntroductionEndsAt) < .001,
+                    "Introduction deadline synchronized");
+                await Until(() => !hostInterview.IsShowingIntroduction && !clientInterview.IsShowingIntroduction,
+                    "Introduction automatically ends on both peers");
+                Check(hostInterview.QuestionSecondsRemaining > 29 && clientInterview.CurrentQuestion == "What is your name, sir?",
+                    "First question starts with full allowance");
                 Check(clientPreparation.PrintedIdentity.Name == "Alice" && clientInterview.Reputation == 50, "Interview starts with correct identity and reputation");
+                Check(hostInterview.QuestionEndsAt > host.ServerTime.Time &&
+                    Math.Abs(hostInterview.QuestionEndsAt - clientInterview.QuestionEndsAt) < .001,
+                    "Question deadline is replicated to both peers");
                 Check(!clientInterview.EvaluateAnswer("Alice") && !clientInterview.ApplyShake(),
                     "Remote instance cannot run authority-only evaluation or reputation changes");
                 Check(Get<GameObject>(remote.GetComponentInChildren<PreparationPreview>(true), "hackerInterview").activeSelf,
                     "Hacker interview desktop visible");
-                hostInterview.SubmitAnswer("   ALICE  ");
+                hostInterview.SubmitAnswer("Hello officer, my name is ALICE.");
                 await Until(() => clientInterview.QuestionIndex == 1, "Case/whitespace-insensitive answer advances both peers");
                 Replay(authority, "Answer", 0, "Alice", false);
                 await Task.Delay(150);
@@ -131,9 +203,13 @@ namespace Game.Multiplayer.Editor
                 Replay(remote, "Answer", 1, "Canada", true);
                 await Task.Delay(150);
                 Check(hostInterview.QuestionIndex == 1, "Hacker cannot submit Traveler answers");
-                hostInterview.SubmitAnswer("Canada");
+                hostInterview.SubmitAnswer("I am coming from Enlaslov.");
                 await Until(() => clientInterview.QuestionIndex == 2, "Second answer replicated");
-                hostInterview.SubmitAnswer("believer");
+                hostInterview.SubmitAnswer("Yes, I work as a Cultural Attache.");
+                await Until(() => clientInterview.QuestionIndex == 3, "Government role sentence replicated");
+                hostInterview.SubmitAnswer("My trip is for cultural connection.");
+                await Until(() => clientInterview.QuestionIndex == 4, "Task category sentence replicated");
+                hostInterview.SubmitAnswer("I plan to stay for two weeks.");
                 await Until(() => clientInterview.IsFinished, "Victory replicated");
                 Check(hostInterview.EntryApproved && clientInterview.EntryApproved, "Both peers approve entry");
                 Call(remote, "ApplySnapshot", remote.CurrentState);
@@ -150,6 +226,7 @@ namespace Game.Multiplayer.Editor
                 Check(authority.CurrentState.Round == round, "Active round cannot start twice");
                 Expire(authority);
                 await Until(() => clientPreparation.Phase == EntryPhase.Interview, "Second Interview started without inventing a missing-print penalty");
+                await Until(() => !clientInterview.IsShowingIntroduction, "Second introduction ended");
                 authority.GetComponentInChildren<PreparationPreview>(true).SetLocalRole(PlayerRole.Hacker);
                 Set(hostInterview, "wrongAnswerReason", new string('R', 240));
                 Replay(authority, "Answer", 0, "wrong answer", true);
@@ -165,6 +242,7 @@ namespace Game.Multiplayer.Editor
                 Check(!hostPreparation.HasPrintedIdentity, "Stale previous-round request ignored");
                 Expire(authority);
                 await Until(() => clientPreparation.Phase == EntryPhase.Interview, "Third Interview started");
+                await Until(() => !clientInterview.IsShowingIntroduction, "Third introduction ended");
                 Replay(remote, "Shake", 0, "", true);
                 await Task.Delay(150);
                 Check(hostInterview.Reputation == 50, "Hacker cannot spend Traveler reputation");
@@ -187,16 +265,88 @@ namespace Game.Multiplayer.Editor
                 await Until(() => remote.CurrentState.Round == 4, "Fourth round replicated for boundary-input check");
                 string fullLengthName = new string('\u00e9', 64);
                 clientPreparation.RequestIdentityEdit(IdentityField.Name, fullLengthName);
-                clientPreparation.RequestIdentityEdit(IdentityField.Nationality, "Canada");
-                clientPreparation.RequestIdentityEdit(IdentityField.Age, "28");
-                clientPreparation.RequestIdentityEdit(IdentityField.LicenseNumber, "ID-42");
+                clientPreparation.RequestIdentityEdit(IdentityField.BirthPlace, "Canada");
+                clientPreparation.RequestIdentityEdit(IdentityField.IssueDate, "1977-11-02");
+                clientPreparation.RequestIdentityEdit(IdentityField.ExpiryDate, "1979-11-02");
+                clientPreparation.RequestIdentityEdit(IdentityField.Birthday, "1950-04-12");
+                clientPreparation.RequestIdentityEdit(IdentityField.PassportCode, "ID-42");
                 await Until(() => clientPreparation.CanPrint, "64-character Unicode identity transported intact");
                 clientPreparation.RequestPrint();
                 await Until(() => hostPreparation.HasPrintedIdentity, "Boundary identity printed");
                 Expire(authority);
                 await Until(() => clientPreparation.Phase == EntryPhase.Interview, "Fourth Interview started");
+                await Until(() => !clientInterview.IsShowingIntroduction, "Fourth introduction ended");
                 hostInterview.SubmitAnswer("  " + fullLengthName + "  ");
                 await Until(() => clientInterview.QuestionIndex == 1, "Outer spaces ignored even for a full-length Unicode answer");
+
+                hostInterview.SetNetworkClock(() => hostInterview.QuestionEndsAt + 1);
+                await Until(() => clientInterview.IsFinished, "Question timeout failure replicated");
+                Check(!clientInterview.EntryApproved && clientInterview.ResultReason.Contains("in time"),
+                    "Timeout uses shared entry-denied result");
+
+                // Exercise the new lobby selection: the host can be Hacker.
+                authority.GetComponent<NetworkObject>().Despawn();
+                await Until(() => remote == null || !remote.IsSpawned, "Old game despawned");
+                var roleVariable = Get<NetworkVariable<LobbyRoleState>>(roles, "state");
+                var selected = roleVariable.Value;
+                selected.Host.Role = LobbyRole.Hacker;
+                selected.Client.Role = LobbyRole.Traveler;
+                roleVariable.Value = selected;
+                authority = UnityEngine.Object.Instantiate(prefab).GetComponent<CoopGameNetworkBridge>();
+                authority.GetComponent<NetworkObject>().Spawn();
+                remote = null;
+                await Until(() =>
+                {
+                    foreach (var bridge in UnityEngine.Object.FindObjectsByType<CoopGameNetworkBridge>())
+                        if (bridge.IsSpawned && bridge.NetworkManager == client) remote = bridge;
+                    return remote != null && remote.CurrentState.Revision != 0;
+                }, "Swapped-role game replicated");
+                Set(authority, "ready", true);
+                authority.StartNewRound();
+                await Same(authority, remote);
+                Check(authority.LocalRole == PlayerRole.Hacker && remote.LocalRole == PlayerRole.Traveler &&
+                    authority.CurrentState.HackerId == host.LocalClientId &&
+                    authority.CurrentState.TravelerId == client.LocalClientId, "Selected roles override host/client defaults");
+                var swappedHostPreparation = authority.GetComponentInChildren<PreparationSession>(true);
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.Name, "HostHacker");
+                await Until(() => remote.GetComponentInChildren<PreparationSession>(true).Identity.Name == "HostHacker",
+                    "Host Hacker can forge identity");
+                Expire(authority);
+                await Until(() => remote.CurrentState.Phase == EntryPhase.Interview, "Swapped-role interview started");
+                await Until(() => !remote.GetComponentInChildren<InterviewController>(true).IsShowingIntroduction,
+                    "Swapped-role introduction ended");
+                remote.GetComponentInChildren<InterviewController>(true).SubmitAnswer("HostHacker");
+                await Until(() => authority.CurrentState.QuestionIndex == 1, "Client Traveler can answer");
+
+                remote.GetComponentInChildren<InterviewController>(true).SubmitAnswer("Wrong nationality");
+                await Until(() => authority.CurrentState.IsFinished, "Finish swapped-role round for mismatch test");
+                authority.StartNewRound();
+                await Same(authority, remote);
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.Name, "Alice");
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.BirthPlace, "Enlaslov");
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.Birthday, "1950-04-12");
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.IssueDate, "1977-11-02");
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.ExpiryDate, "1979-11-02");
+                swappedHostPreparation.RequestIdentityEdit(IdentityField.PassportCode, "XYZ0000");
+                swappedHostPreparation.RequestPrint();
+                swappedHostPreparation.RequestGovernmentEdit(GovernmentField.Name, "Alice");
+                swappedHostPreparation.RequestGovernmentEdit(GovernmentField.Nationality, "Different Country");
+                swappedHostPreparation.RequestGovernmentEdit(GovernmentField.Position, "Diplomat");
+                swappedHostPreparation.RequestGovernmentEdit(GovernmentField.Category, "1");
+                swappedHostPreparation.RequestGovernmentPrint();
+                await Until(() => remote.CurrentState.HasPrintedGovernment && remote.CurrentState.HasPrintedIdentity,
+                    "Both conflicting printed documents replicated");
+                Expire(authority);
+                await Until(() => remote.CurrentState.DocumentMismatch, "Mismatch flag replicated to Traveler");
+                var challenged = remote.GetComponentInChildren<InterviewController>(true);
+                await Until(() => !challenged.IsShowingIntroduction, "Mismatch introduction ended");
+                Check(challenged.CurrentQuestion.Contains("discrepancy") && !challenged.IsFinished,
+                    "Contradiction question shown before failure");
+                challenged.SubmitAnswer("My name is Alice.");
+                await Until(() => authority.CurrentState.IsFinished && remote.CurrentState.IsFinished,
+                    "Any answer to contradiction fails both peers");
+                Check(!remote.CurrentState.EntryApproved && remote.CurrentState.ResultReason.Contains("does not match"),
+                    "Correct passport name cannot bypass document mismatch");
 
                 // Existing offline asset still starts and uses its own local simulation.
                 offline = UnityEngine.Object.Instantiate(AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Taylor/Canvas.prefab"));
@@ -204,14 +354,20 @@ namespace Game.Multiplayer.Editor
                 var local = offline.GetComponent<PreparationSession>();
                 Check(local.LocalSimulation && local.Phase == EntryPhase.Preparation, "Offline prefab auto-start preserved");
                 local.ApplyIdentityEdit(IdentityField.Name, "Local");
-                local.ApplyIdentityEdit(IdentityField.Nationality, "LocalLand");
+                local.ApplyIdentityEdit(IdentityField.BirthPlace, "LocalLand");
+                local.ApplyGovernmentEdit(GovernmentField.Nationality, "LocalLand");
+                local.ApplyGovernmentEdit(GovernmentField.Position, "Diplomat");
+                local.ApplyGovernmentEdit(GovernmentField.Category, "1");
                 local.AdvanceLocalTime(100);
                 var localInterview = offline.GetComponent<InterviewController>();
+                await Until(() => !localInterview.IsShowingIntroduction, "Offline introduction ended");
                 localInterview.EvaluateAnswer("local");
                 localInterview.EvaluateAnswer("localland");
-                localInterview.EvaluateAnswer("believer");
+                localInterview.EvaluateAnswer("I work as a diplomat.");
+                localInterview.EvaluateAnswer("My task concerns politics.");
+                localInterview.EvaluateAnswer("A few days.");
                 Check(localInterview.IsFinished && localInterview.EntryApproved, "Offline answer rules preserved");
-                Debug.Log($"COOP INTEGRATION CHECKS PASSED: {checks} checks; real NGO/Unity Transport loopback, 4 online rounds and offline regression. Relay and NGO scene-load synchronization were not exercised by this fixture.");
+                Debug.Log($"COOP INTEGRATION CHECKS PASSED: {checks} checks; real NGO/Unity Transport loopback, timeout, swapped roles and offline regression. Relay and NGO scene-load synchronization were not exercised by this fixture.");
             }
             catch (Exception exception) { Debug.LogError($"COOP INTEGRATION CHECKS FAILED after {checks} checks: {exception}"); }
             finally
@@ -221,6 +377,7 @@ namespace Game.Multiplayer.Editor
                 if (host != null) host.Shutdown();
                 await Task.Delay(300);
                 if (authority != null) UnityEngine.Object.Destroy(authority.gameObject);
+                if (roles != null) UnityEngine.Object.Destroy(roles.gameObject);
                 if (client != null) UnityEngine.Object.Destroy(client.gameObject);
                 host.NetworkConfig.EnableSceneManagement = sceneManagement;
                 host.NetworkConfig.ForceSamePrefabs = samePrefabs;

@@ -7,20 +7,23 @@ namespace Game.Multiplayer
 {
     public struct NetworkIdentity : INetworkSerializable, IEquatable<NetworkIdentity>
     {
-        public FixedString512Bytes Name, Nationality, Age, LicenseNumber;
+        public FixedString512Bytes Name, BirthPlace, IssueDate, PassportCode, ExpiryDate, Birthday;
 
         public NetworkIdentity(IdentityCard card)
         {
             Name = Text(card.Name);
-            Nationality = Text(card.Nationality);
-            Age = Text(card.Age);
-            LicenseNumber = Text(card.LicenseNumber);
+            BirthPlace = Text(card.BirthPlace);
+            IssueDate = Text(card.IssueDate);
+            PassportCode = Text(card.PassportCode);
+            ExpiryDate = Text(card.ExpiryDate);
+            Birthday = Text(card.Birthday);
         }
 
         public IdentityCard ToCard() => new()
         {
-            Name = Name.ToString(), Nationality = Nationality.ToString(),
-            Age = Age.ToString(), LicenseNumber = LicenseNumber.ToString()
+            Name = Name.ToString(), BirthPlace = BirthPlace.ToString(),
+            IssueDate = IssueDate.ToString(), PassportCode = PassportCode.ToString(), ExpiryDate = ExpiryDate.ToString(),
+            Birthday = Birthday.ToString()
         };
 
         public static FixedString512Bytes Text(string value, int characterLimit = 64)
@@ -34,13 +37,16 @@ namespace Game.Multiplayer
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
             serializer.SerializeValue(ref Name);
-            serializer.SerializeValue(ref Nationality);
-            serializer.SerializeValue(ref Age);
-            serializer.SerializeValue(ref LicenseNumber);
+            serializer.SerializeValue(ref BirthPlace);
+            serializer.SerializeValue(ref IssueDate);
+            serializer.SerializeValue(ref PassportCode);
+            serializer.SerializeValue(ref ExpiryDate);
+            serializer.SerializeValue(ref Birthday);
         }
 
-        public bool Equals(NetworkIdentity other) => Name.Equals(other.Name) && Nationality.Equals(other.Nationality)
-            && Age.Equals(other.Age) && LicenseNumber.Equals(other.LicenseNumber);
+        public bool Equals(NetworkIdentity other) => Name.Equals(other.Name) && BirthPlace.Equals(other.BirthPlace)
+            && IssueDate.Equals(other.IssueDate) && PassportCode.Equals(other.PassportCode) && ExpiryDate.Equals(other.ExpiryDate)
+            && Birthday.Equals(other.Birthday);
     }
 
     // One atomic value: the Interview phase can never arrive ahead of its final printed identity.
@@ -50,7 +56,12 @@ namespace Game.Multiplayer
         public ulong TravelerId, HackerId;
         public EntryPhase Phase;
         public double PreparationEndsAt;
+        public double QuestionEndsAt;
+        public double IntroductionEndsAt;
+        public bool DocumentMismatch;
         public NetworkIdentity Identity, PrintedIdentity;
+        public NetworkGovernmentDocument Government, PrintedGovernment;
+        public bool HasPrintedGovernment;
         public bool HasPrintedIdentity, IsFinished, EntryApproved;
         public int QuestionIndex, Reputation;
         public string ResultReason;
@@ -64,8 +75,14 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref HackerId);
             serializer.SerializeValue(ref Phase);
             serializer.SerializeValue(ref PreparationEndsAt);
+            serializer.SerializeValue(ref QuestionEndsAt);
+            serializer.SerializeValue(ref IntroductionEndsAt);
+            serializer.SerializeValue(ref DocumentMismatch);
             serializer.SerializeValue(ref Identity);
             serializer.SerializeValue(ref PrintedIdentity);
+            serializer.SerializeValue(ref Government);
+            serializer.SerializeValue(ref PrintedGovernment);
+            serializer.SerializeValue(ref HasPrintedGovernment);
             serializer.SerializeValue(ref HasPrintedIdentity);
             serializer.SerializeValue(ref IsFinished);
             serializer.SerializeValue(ref EntryApproved);
@@ -77,7 +94,12 @@ namespace Game.Multiplayer
         public bool Equals(CoopGameSnapshot other) => Round == other.Round && Revision == other.Revision
             && ShakeSequence == other.ShakeSequence && TravelerId == other.TravelerId && HackerId == other.HackerId
             && Phase == other.Phase && PreparationEndsAt.Equals(other.PreparationEndsAt)
+            && QuestionEndsAt.Equals(other.QuestionEndsAt)
+            && IntroductionEndsAt.Equals(other.IntroductionEndsAt)
+            && DocumentMismatch == other.DocumentMismatch
             && Identity.Equals(other.Identity) && PrintedIdentity.Equals(other.PrintedIdentity)
+            && Government.Equals(other.Government) && PrintedGovernment.Equals(other.PrintedGovernment)
+            && HasPrintedGovernment == other.HasPrintedGovernment
             && HasPrintedIdentity == other.HasPrintedIdentity && IsFinished == other.IsFinished
             && EntryApproved == other.EntryApproved && QuestionIndex == other.QuestionIndex
             && Reputation == other.Reputation && string.Equals(ResultReason, other.ResultReason, StringComparison.Ordinal);
