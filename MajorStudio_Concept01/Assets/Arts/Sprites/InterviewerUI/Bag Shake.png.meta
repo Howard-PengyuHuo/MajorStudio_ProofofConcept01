@@ -1,0 +1,455 @@
+fileFormatVersion: 2
+guid: 7841c064c67e1a04887aefd268f02565
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -143241690760270378
+    second: Bag Shake_0
+  - first:
+      213: -2980454285645716460
+    second: Bag Shake_1
+  - first:
+      213: 8219655558606086531
+    second: Bag Shake_2
+  - first:
+      213: -516664798164231271
+    second: Bag Shake_3
+  - first:
+      213: 6601323391662983125
+    second: Bag Shake_4
+  - first:
+      213: 8568491157239613626
+    second: Bag Shake_5
+  - first:
+      213: -1958156480069599280
+    second: Bag Shake_6
+  - first:
+      213: 3678812999948171635
+    second: Bag Shake_7
+  - first:
+      213: 1052769191464144590
+    second: Bag Shake_8
+  - first:
+      213: 8169002046548470575
+    second: Bag Shake_9
+  - first:
+      213: 3584871571647035784
+    second: Bag Shake_10
+  - first:
+      213: -986547734357190365
+    second: Bag Shake_11
+  - first:
+      213: -3465905634958067143
+    second: Bag Shake_12
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 1
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationDetail: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Bag Shake_0
+      rect:
+        serializedVersion: 2
+        x: 100
+        y: 681
+        width: 58
+        height: 93
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 6dd2531f07a130ef0800000000000000
+      internalID: -143241690760270378
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_1
+      rect:
+        serializedVersion: 2
+        x: 173
+        y: 683
+        width: 52
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 414ebca4e9c43a6d0800000000000000
+      internalID: -2980454285645716460
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_2
+      rect:
+        serializedVersion: 2
+        x: 237
+        y: 683
+        width: 63
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 381e7c25e25121270800000000000000
+      internalID: 8219655558606086531
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_3
+      rect:
+        serializedVersion: 2
+        x: 312
+        y: 683
+        width: 58
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 99bd87d7a1074d8f0800000000000000
+      internalID: -516664798164231271
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_4
+      rect:
+        serializedVersion: 2
+        x: 382
+        y: 683
+        width: 53
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 5d78c8f36ac9c9b50800000000000000
+      internalID: 6601323391662983125
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_5
+      rect:
+        serializedVersion: 2
+        x: 6
+        y: 162
+        width: 534
+        height: 477
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ab8c7584f4569e670800000000000000
+      internalID: 8568491157239613626
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_6
+      rect:
+        serializedVersion: 2
+        x: 8
+        y: 35
+        width: 66
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 0df72de5e0b33d4e0800000000000000
+      internalID: -1958156480069599280
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_7
+      rect:
+        serializedVersion: 2
+        x: 84
+        y: 33
+        width: 54
+        height: 93
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 379fff8aee4cd0330800000000000000
+      internalID: 3678812999948171635
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_8
+      rect:
+        serializedVersion: 2
+        x: 154
+        y: 33
+        width: 53
+        height: 92
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: ece02b770003c9e00800000000000000
+      internalID: 1052769191464144590
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_9
+      rect:
+        serializedVersion: 2
+        x: 224
+        y: 35
+        width: 57
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f2be5f184102e5170800000000000000
+      internalID: 8169002046548470575
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_10
+      rect:
+        serializedVersion: 2
+        x: 329
+        y: 35
+        width: 55
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 889fa6173b500c130800000000000000
+      internalID: 3584871571647035784
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_11
+      rect:
+        serializedVersion: 2
+        x: 394
+        y: 35
+        width: 62
+        height: 90
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3295ca300141f42f0800000000000000
+      internalID: -986547734357190365
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Bag Shake_12
+      rect:
+        serializedVersion: 2
+        x: 468
+        y: 33
+        width: 54
+        height: 93
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 93abc4b2031a6efc0800000000000000
+      internalID: -3465905634958067143
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 5e97eb03825dee720800000000000000
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Bag Shake_0: -143241690760270378
+      Bag Shake_1: -2980454285645716460
+      Bag Shake_10: 3584871571647035784
+      Bag Shake_11: -986547734357190365
+      Bag Shake_12: -3465905634958067143
+      Bag Shake_2: 8219655558606086531
+      Bag Shake_3: -516664798164231271
+      Bag Shake_4: 6601323391662983125
+      Bag Shake_5: 8568491157239613626
+      Bag Shake_6: -1958156480069599280
+      Bag Shake_7: 3678812999948171635
+      Bag Shake_8: 1052769191464144590
+      Bag Shake_9: 8169002046548470575
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

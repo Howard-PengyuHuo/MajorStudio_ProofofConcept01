@@ -27,7 +27,8 @@ namespace CarryOn.Taylor
         private bool printQueued, printSent, wasPrinted;
         private int lastPrintFrame = -1;
         private Coroutine focusRoutine;
-        private TMP_InputField[] Fields => new[] { nameInput, birthdayInput, birthPlaceInput, issueDateInput, expiryDateInput, passportCodeInput };
+        private TMP_InputField[] fields;
+        private TMP_InputField[] Fields => fields ??= new[] { nameInput, birthdayInput, birthPlaceInput, passportCodeInput };
         [SerializeField] private GameObject printedCard;
         [SerializeField] private TMP_Text printedName;
         [UnityEngine.Serialization.FormerlySerializedAs("printedNationality"), SerializeField] private TMP_Text printedBirthPlace;
@@ -234,7 +235,7 @@ namespace CarryOn.Taylor
                 if (status != null) status.text = interview ? "IDENTITY LOCKED  /  Use your card and regulations to help your partner." :
                     !editing ? "Start the queue to edit the identity card." :
                     card.IsComplete ? "All fields filled. You can edit until time expires. Changes save automatically." :
-                    "Type into all six fields. Changes save automatically.";
+                    "Fill in name, birthday, nationality and passport code. Press Enter to print.";
             }
             RefreshPrintHint();
             if (printQueued && !printSent && pendingEdits.Count == 0 && session.CanPrint)

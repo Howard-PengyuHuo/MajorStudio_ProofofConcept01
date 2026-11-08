@@ -1,5 +1,6 @@
 using System;
 using System.Globalization;
+using System.Collections.Generic;
 using System.Text.RegularExpressions;
 
 namespace CarryOn.Taylor
@@ -14,7 +15,21 @@ namespace CarryOn.Taylor
             "yyyy MMM d", "yyyy MMMM d"
         };
 
+        private static readonly Dictionary<string, string> normalizedDates = new Dictionary<string, string>(256);
+
         public static bool TryNormalize(string text, out string canonical)
+        {
+            canonical = null;
+            if (string.IsNullOrWhiteSpace(text) || text.Length > 128) return false;
+            if (normalizedDates.TryGetValue(text, out canonical)) return canonical != null;
+            bool valid = ParseDate(text, out canonical);
+            // Cache failures too: partially typed dates are repeatedly checked by multiple views.
+            if (normalizedDates.Count >= 256) normalizedDates.Clear();
+            normalizedDates[text] = canonical;
+            return valid;
+        }
+
+        private static bool ParseDate(string text, out string canonical)
         {
             canonical = null;
             if (string.IsNullOrWhiteSpace(text) || text.Length > 128) return false;
@@ -38,12 +53,10 @@ namespace CarryOn.Taylor
         public static bool TryNormalizeCard(IdentityCard source, out IdentityCard result)
         {
             result = source;
-            if (!TryNormalize(source.Birthday, out var birthday) ||
-                !TryNormalize(source.IssueDate, out var issued) ||
-                !TryNormalize(source.ExpiryDate, out var expiry)) return false;
+            if (!TryNormalize(source.Birthday, out var birthday)) return false;
             result.Birthday = birthday;
-            result.IssueDate = issued;
-            result.ExpiryDate = expiry;
+            result.IssueDate = IdentityCard.FixedIssueDate;
+            result.ExpiryDate = IdentityCard.FixedExpiryDate;
             return true;
         }
 

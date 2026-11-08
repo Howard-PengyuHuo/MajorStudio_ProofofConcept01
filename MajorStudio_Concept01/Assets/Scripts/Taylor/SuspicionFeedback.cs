@@ -13,12 +13,12 @@ namespace CarryOn.Taylor
         private void OnEnable()
         {
             Hide();
-            if (interview != null) interview.ShakePresented += Show;
+            if (interview != null) interview.ReputationDropped += Show;
         }
 
         private void OnDisable()
         {
-            if (interview != null) interview.ShakePresented -= Show;
+            if (interview != null) interview.ReputationDropped -= Show;
             Hide();
         }
 

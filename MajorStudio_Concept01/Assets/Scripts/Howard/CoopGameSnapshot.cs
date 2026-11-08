@@ -58,7 +58,8 @@ namespace Game.Multiplayer
         public double PreparationEndsAt;
         public double QuestionEndsAt;
         public double IntroductionEndsAt;
-        public bool DocumentMismatch;
+        public bool DocumentMismatch, ReviewingPurpose;
+        public FixedString512Bytes PurposeLine;
         public NetworkIdentity Identity, PrintedIdentity;
         public NetworkGovernmentDocument Government, PrintedGovernment;
         public bool HasPrintedGovernment;
@@ -78,6 +79,8 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref QuestionEndsAt);
             serializer.SerializeValue(ref IntroductionEndsAt);
             serializer.SerializeValue(ref DocumentMismatch);
+            serializer.SerializeValue(ref ReviewingPurpose);
+            serializer.SerializeValue(ref PurposeLine);
             serializer.SerializeValue(ref Identity);
             serializer.SerializeValue(ref PrintedIdentity);
             serializer.SerializeValue(ref Government);
@@ -96,7 +99,7 @@ namespace Game.Multiplayer
             && Phase == other.Phase && PreparationEndsAt.Equals(other.PreparationEndsAt)
             && QuestionEndsAt.Equals(other.QuestionEndsAt)
             && IntroductionEndsAt.Equals(other.IntroductionEndsAt)
-            && DocumentMismatch == other.DocumentMismatch
+            && DocumentMismatch == other.DocumentMismatch && ReviewingPurpose == other.ReviewingPurpose && PurposeLine.Equals(other.PurposeLine)
             && Identity.Equals(other.Identity) && PrintedIdentity.Equals(other.PrintedIdentity)
             && Government.Equals(other.Government) && PrintedGovernment.Equals(other.PrintedGovernment)
             && HasPrintedGovernment == other.HasPrintedGovernment
