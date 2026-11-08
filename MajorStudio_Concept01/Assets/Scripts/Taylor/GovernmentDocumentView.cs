@@ -25,7 +25,8 @@ namespace CarryOn.Taylor
         private TaskCategory? pendingCategory;
         private bool queued, sent, wasPrinted;
         private int lastSubmitFrame = -1;
-        private TMP_InputField[] Inputs => new[] { nameInput, nationalityInput, positionInput };
+        private TMP_InputField[] inputs;
+        private TMP_InputField[] Inputs => inputs ??= new[] { nameInput, nationalityInput, positionInput };
 
         private void OnEnable()
         {

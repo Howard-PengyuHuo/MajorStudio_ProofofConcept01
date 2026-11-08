@@ -23,7 +23,7 @@ namespace CarryOn.Taylor
     }
 
     // Demonstration logic only; network authority can replace the local submission later.
-    public class InterviewController : MonoBehaviour
+    public partial class InterviewController : MonoBehaviour
     {
         [SerializeField] private PreparationSession session;
         [SerializeField] private TMP_Text questionText;
@@ -31,7 +31,7 @@ namespace CarryOn.Taylor
         [Header("Opening introduction")]
         [TextArea(2, 5), SerializeField] private string introduction = "Welcome! Allow us to do a quick review before letting you through to Hyacinth Town. Hopefully you have read the entry rules carefully on your way here.";
         [SerializeField, Min(0)] private float introductionSeconds = 3f;
-        [Header("Document consistency (demo: Birth Place must match Nationality)")]
+        [Header("Document consistency: passport and permit name / nationality")]
         [TextArea(2, 5), SerializeField] private string discrepancyQuestion = "There’s a discrepancy between your passport and your government permit. These documents do not appear to belong to the same person. How do you explain that?";
         [SerializeField] private string discrepancyReason = "The information on your passport and government permit does not match.";
         public bool DocumentMismatch { get; private set; }
@@ -39,9 +39,9 @@ namespace CarryOn.Taylor
         {
             new InterviewQuestion { question = "What is your name, sir?", answerSource = AnswerSource.ForgedName },
             new InterviewQuestion { question = "Where are you coming from?", answerSource = AnswerSource.GovernmentNationality },
-            new InterviewQuestion { question = "Are you affiliated with any government, and if so, what is your role?", answerSource = AnswerSource.GovernmentPosition },
             new InterviewQuestion { question = "What is the intention of your trip? Any plans for how you’re going to spend your time here?", answerSource = AnswerSource.GovernmentTaskCategory },
-            new InterviewQuestion { question = "How long are you planning to stay here?", answerSource = AnswerSource.AnyNonEmpty }
+            new InterviewQuestion { question = "How long are you planning to stay here?", answerSource = AnswerSource.AnyNonEmpty },
+            new InterviewQuestion { question = "What belongings are you bringing with you?", answerSource = AnswerSource.AnyNonEmpty }
         };
         [SerializeField] private string successMessage = "ENTRY APPROVED";
         [SerializeField] private string failureMessage = "ENTRY DENIED";
@@ -71,7 +71,8 @@ namespace CarryOn.Taylor
         public event Action ShakePresented;
         public string CurrentQuestion => started && !IsFinished && questions != null &&
             QuestionIndex >= 0 && QuestionIndex < questions.Length ?
-            (IsShowingIntroduction ? introduction : DocumentMismatch ? discrepancyQuestion : questions[QuestionIndex].question) : string.Empty;
+            (IsShowingIntroduction ? introduction : DocumentMismatch ? discrepancyQuestion : ReviewingPurpose ? "Reviewing your answer..." :
+             !string.IsNullOrEmpty(PurposeLine) ? PurposeLine : questions[QuestionIndex].question) : string.Empty;
         private bool networkMode;
         private bool networkAuthority;
         private bool localInputAllowed = true;
@@ -121,6 +122,7 @@ namespace CarryOn.Taylor
             {
                 session.PreparationCompleted += BeginInterview;
                 session.Changed += ResetForPreparation;
+                if (session.Phase == EntryPhase.Preparation) PreparePurpose();
             }
             if (answerInput != null) answerInput.onSubmit.AddListener(SubmitAnswer);
             if (shakeButton != null) shakeButton.onClick.AddListener(Shake);
@@ -133,6 +135,7 @@ namespace CarryOn.Taylor
         {
             if (session != null)
             {
+                ResetPurpose();
                 session.PreparationCompleted -= BeginInterview;
                 session.Changed -= ResetForPreparation;
             }
@@ -143,6 +146,8 @@ namespace CarryOn.Taylor
         private void ResetForPreparation()
         {
             if (session.Phase == EntryPhase.Interview) return;
+            if (session.Phase == EntryPhase.Waiting || started) ResetPurpose();
+            if (session.Phase == EntryPhase.Preparation) PreparePurpose();
             started = false;
             QuestionEndsAt = 0;
             IntroductionEndsAt = 0;
@@ -164,7 +169,7 @@ namespace CarryOn.Taylor
         {
             identity = card;
             var permit = session.HasPrintedGovernment ? session.PrintedGovernment : session.Government;
-            DocumentMismatch = Conflicts(card.BirthPlace, permit.Nationality) || Conflicts(card.Name, permit.Name);
+            DocumentMismatch = Conflicts(card.Nationality, permit.Nationality) || Conflicts(card.Name, permit.Name);
             QuestionIndex = 0;
             IsFinished = false;
             EntryApproved = false;
@@ -189,10 +194,10 @@ namespace CarryOn.Taylor
         // TMP onSubmit is Enter; onEndEdit is deliberately not used (clicking away must not submit).
         public void SubmitAnswer(string value)
         {
-            if (!localInputAllowed || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview ||
+            if (ReviewingPurpose || !localInputAllowed || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview ||
                 !answerInput.gameObject.activeInHierarchy || lastSubmitFrame == Time.frameCount) return;
             if (string.IsNullOrWhiteSpace(value)) { FocusAnswer(); return; }
-            if (!DocumentMismatch && UsesDate(questions[QuestionIndex]) && !PassportDate.TryExtract(value, out _))
+            if (!useOllama && !DocumentMismatch && UsesDate(questions[QuestionIndex]) && !PassportDate.TryExtract(value, out _))
             {
                 ShowDateHint();
                 FocusAnswer();
@@ -211,6 +216,7 @@ namespace CarryOn.Taylor
         public bool EvaluateAnswer(string value)
         {
             if (networkMode && !networkAuthority) return false;
+            if (ReviewingPurpose) return false;
             if (ExpireQuestion()) return true;
             if (!started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview ||
                 string.IsNullOrWhiteSpace(value) || questions == null ||
@@ -222,6 +228,11 @@ namespace CarryOn.Taylor
                 return true;
             }
             var government = session.HasPrintedGovernment ? session.PrintedGovernment : session.Government;
+            if (useOllama)
+            {
+                answerJob = StartCoroutine(JudgeAnswer(value));
+                return true;
+            }
             string expected = current.answerSource == AnswerSource.ForgedName ? identity.Name :
                 current.answerSource == AnswerSource.ForgedBirthPlace ? identity.BirthPlace :
                 current.answerSource == AnswerSource.ForgedIssueDate ? identity.IssueDate :
@@ -250,11 +261,17 @@ namespace CarryOn.Taylor
                 Finish(false, wrongAnswerReason);
                 return true;
             }
+            AdvanceQuestion();
+            return true;
+        }
+
+        private void AdvanceQuestion()
+        {
+            PurposeLine = "";
             QuestionIndex++;
             if (QuestionIndex >= questions.Length) Finish(true, successReason);
             else ShowQuestion();
             Changed?.Invoke();
-            return true;
         }
 
         private static string NormalizeAnswer(string value) =>
@@ -279,6 +296,16 @@ namespace CarryOn.Taylor
 
         private void ShowQuestion()
         {
+            if (ReviewingPurpose) { RefreshQuestionPresentation(); return; }
+            if ((!networkMode || networkAuthority) && useOllama && !DocumentMismatch && string.IsNullOrEmpty(PurposeLine) &&
+                (preparedLines == null || preparedLines[QuestionIndex] == null))
+            {
+                if (questionJob != null) StopCoroutine(questionJob);
+                questionJob = StartCoroutine(GenerateNextQuestion());
+                return;
+            }
+            if ((!networkMode || networkAuthority) && useOllama && !DocumentMismatch && string.IsNullOrEmpty(PurposeLine))
+                PurposeLine = preparedLines != null && preparedLines[QuestionIndex] != null ? preparedLines[QuestionIndex] : questions[QuestionIndex].question;
             if (!networkMode || networkAuthority)
                 QuestionEndsAt = Math.Max(Clock, QuestionIndex == 0 ? IntroductionEndsAt : 0) + Mathf.Max(0.1f, questions[QuestionIndex].timeLimitSeconds);
             RefreshQuestionPresentation();
@@ -291,8 +318,8 @@ namespace CarryOn.Taylor
             showingIntroduction = IsShowingIntroduction;
             if (!started || IsFinished) return;
             if (questionText != null) questionText.text = CurrentQuestion;
-            if (answerInput != null) answerInput.interactable = localInputAllowed && !showingIntroduction;
-            if (shakeButton != null) shakeButton.interactable = localInputAllowed && !showingIntroduction;
+            if (answerInput != null) answerInput.interactable = localInputAllowed && !showingIntroduction && !ReviewingPurpose;
+            if (shakeButton != null) shakeButton.interactable = localInputAllowed && !showingIntroduction && !ReviewingPurpose;
         }
 
         public void FocusAnswer()
@@ -322,9 +349,10 @@ namespace CarryOn.Taylor
         public bool ApplyShake()
         {
             if (networkMode && !networkAuthority) return false;
-            if (!started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview) return false;
+            if (ReviewingPurpose || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview) return false;
             Reputation = Mathf.Max(0, Reputation - Mathf.Max(1, shakePenalty));
             RefreshReputation();
+            ReputationDropped?.Invoke();
             if (!networkMode) NotifyNetworkShake();
             if (Reputation == 0) Finish(false, reputationFailureReason);
             else FocusAnswer();
@@ -340,10 +368,14 @@ namespace CarryOn.Taylor
         }
 
         public void ApplyNetworkSnapshot(int questionIndex, int reputation, bool finished,
-            bool approved, string reason, double questionEndsAt = 0, double introductionEndsAt = 0, bool documentMismatch = false)
+            bool approved, string reason, double questionEndsAt = 0, double introductionEndsAt = 0, bool documentMismatch = false,
+            string purposeLine = "", bool reviewingPurpose = false)
         {
             if (!networkMode) return;
-            bool questionChanged = QuestionIndex != questionIndex;
+            bool questionChanged = QuestionIndex != questionIndex || PurposeLine != (purposeLine ?? "") || (ReviewingPurpose && !reviewingPurpose);
+            PurposeLine = purposeLine ?? "";
+            ReviewingPurpose = reviewingPurpose;
+            if (!networkAuthority && reputation < Reputation) ReputationDropped?.Invoke();
             QuestionIndex = questionIndex;
             IntroductionEndsAt = introductionEndsAt;
             DocumentMismatch = documentMismatch;
@@ -357,7 +389,7 @@ namespace CarryOn.Taylor
             if (started && !IsFinished && questionChanged) ShowQuestion();
             QuestionEndsAt = questionEndsAt;
             RefreshQuestionPresentation();
-            if (shakeButton != null) shakeButton.interactable = localInputAllowed && started && !IsFinished && !IsShowingIntroduction;
+            if (shakeButton != null) shakeButton.interactable = localInputAllowed && started && !IsFinished && !IsShowingIntroduction && !ReviewingPurpose;
         }
 
         private void RefreshReputation()

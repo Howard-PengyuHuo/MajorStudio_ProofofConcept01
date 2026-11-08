@@ -84,6 +84,7 @@ namespace Game.Multiplayer
             preparation.GovernmentPrintRequested += RequestGovernmentPrint;
             interview.AnswerRequested += RequestAnswer;
             interview.ShakeRequested += RequestShake;
+            interview.PurposeResolved += PublishPurpose;
             if (NetworkManager.SceneManager != null)
                 NetworkManager.SceneManager.OnLoadEventCompleted += OnSceneLoaded;
             subscribed = true;
@@ -159,6 +160,11 @@ namespace Game.Multiplayer
             Publish(state);
         }
 
+        private void PublishPurpose()
+        {
+            if (IsSpawned && IsServer) Publish(snapshot.Value);
+        }
+
         private void Publish(CoopGameSnapshot state)
         {
             state.Revision++;
@@ -170,6 +176,8 @@ namespace Game.Multiplayer
             state.PrintedGovernment = new NetworkGovernmentDocument(preparation.PrintedGovernment);
             state.HasPrintedGovernment = preparation.HasPrintedGovernment;
             state.QuestionIndex = interview.QuestionIndex;
+            state.PurposeLine = NetworkIdentity.Text(interview.PurposeLine, 120);
+            state.ReviewingPurpose = interview.ReviewingPurpose;
             state.QuestionEndsAt = interview.QuestionEndsAt;
             state.IntroductionEndsAt = interview.IntroductionEndsAt;
             state.DocumentMismatch = interview.DocumentMismatch;
@@ -201,7 +209,7 @@ namespace Game.Multiplayer
             if (!presentation.activeSelf) presentation.SetActive(true);
             ApplyPreparation(state);
             interview.ApplyNetworkSnapshot(state.QuestionIndex, state.Reputation,
-                state.IsFinished, state.EntryApproved, state.ResultReason, state.QuestionEndsAt, state.IntroductionEndsAt, state.DocumentMismatch);
+                state.IsFinished, state.EntryApproved, state.ResultReason, state.QuestionEndsAt, state.IntroductionEndsAt, state.DocumentMismatch, state.PurposeLine.ToString(), state.ReviewingPurpose);
             while (notifiedShake < state.ShakeSequence)
             {
                 notifiedShake++;
@@ -210,12 +218,25 @@ namespace Game.Multiplayer
             }
         }
 
+        private PreparationSession lastPreparationView;
+        private uint lastPreparationRound, lastPreparationRevision;
+        private int lastPreparationSecond = -1;
+
         private void ApplyPreparation(CoopGameSnapshot state)
         {
-            preparation.ApplyGovernmentSnapshot(state.Government.ToDocument(), state.HasPrintedGovernment,
-                state.PrintedGovernment.ToDocument());
             float remaining = state.Phase == EntryPhase.Preparation
                 ? (float)Math.Max(0, state.PreparationEndsAt - NetworkManager.ServerTime.Time) : 0;
+            int second = UnityEngine.Mathf.CeilToInt(remaining);
+            // Unchanged network values need neither string conversion nor a full UI refresh.
+            if (lastPreparationView == preparation && lastPreparationRound == state.Round &&
+                lastPreparationRevision == state.Revision && lastPreparationSecond == second &&
+                preparation.Phase == state.Phase) return;
+            lastPreparationView = preparation;
+            lastPreparationRound = state.Round;
+            lastPreparationRevision = state.Revision;
+            lastPreparationSecond = second;
+            preparation.ApplyGovernmentSnapshot(state.Government.ToDocument(), state.HasPrintedGovernment,
+                state.PrintedGovernment.ToDocument());
             preparation.ApplyNetworkSnapshot(state.Phase, remaining, state.Identity.ToCard(),
                 state.HasPrintedIdentity, state.PrintedIdentity.ToCard());
         }
@@ -237,17 +258,17 @@ namespace Game.Multiplayer
         {
             if (!gameplaySynchronizationEnabled || !IsSpawned || snapshot.Value.Revision == 0) return;
             GameplayRequestRpc(snapshot.Value.Round, ++nextRequest, request, argument,
-                NetworkIdentity.Text(value, request == Request.Answer ? 120 : 64));
+                NetworkIdentity.Text(value, request == Request.Answer ? 120 : 64), snapshot.Value.QuestionEndsAt);
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
         private void GameplayRequestRpc(uint round, ulong requestId, Request request, int argument,
-            FixedString512Bytes value, RpcParams rpcParams = default)
+            FixedString512Bytes value, double displayedDeadline, RpcParams rpcParams = default)
         {
-            ProcessRequest(rpcParams.Receive.SenderClientId, round, requestId, request, argument, value.ToString());
+            ProcessRequest(rpcParams.Receive.SenderClientId, round, requestId, request, argument, value.ToString(), displayedDeadline);
         }
 
-        private void ProcessRequest(ulong sender, uint round, ulong requestId, Request request, int argument, string value)
+        private void ProcessRequest(ulong sender, uint round, ulong requestId, Request request, int argument, string value, double displayedDeadline)
         {
             if (!gameplaySynchronizationEnabled || !IsServer || !ready || round != snapshot.Value.Round || requestId == 0 ||
                 !NetworkManager.ConnectedClients.ContainsKey(sender)) return;
@@ -275,7 +296,7 @@ namespace Game.Multiplayer
             else if (request == Request.PrintGovernment && hacker && preparation.CanPrintGovernment)
                 preparation.PrintGovernment();
             else if (request == Request.Answer && traveler && state.Phase == EntryPhase.Interview &&
-                argument == interview.QuestionIndex && !string.IsNullOrWhiteSpace(value))
+                argument == interview.QuestionIndex && displayedDeadline == interview.QuestionEndsAt && !string.IsNullOrWhiteSpace(value))
                 interview.EvaluateAnswer(value);
             else if (request == Request.Shake && traveler && state.Phase == EntryPhase.Interview)
             {
@@ -325,6 +346,7 @@ namespace Game.Multiplayer
                 preparation.GovernmentPrintRequested -= RequestGovernmentPrint;
                 interview.AnswerRequested -= RequestAnswer;
                 interview.ShakeRequested -= RequestShake;
+                interview.PurposeResolved -= PublishPurpose;
                 if (NetworkManager != null && NetworkManager.SceneManager != null)
                     NetworkManager.SceneManager.OnLoadEventCompleted -= OnSceneLoaded;
                 subscribed = false;

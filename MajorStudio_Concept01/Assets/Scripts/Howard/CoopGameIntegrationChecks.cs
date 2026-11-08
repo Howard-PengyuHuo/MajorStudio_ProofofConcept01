@@ -19,7 +19,12 @@ namespace Game.Multiplayer.Editor
         private static int checks;
 
         [MenuItem("Tools/Cooperative Game/Run Loopback Gameplay Checks (Play Mode)")]
-        public static async void Run()
+        public static void Run() => RunChecks(false);
+
+        [MenuItem("Tools/Cooperative Game/Run Loopback Checks With Local Ollama (Play Mode)")]
+        public static void RunWithOllama() => RunChecks(true);
+
+        private static async void RunChecks(bool liveOllama)
         {
             if (!EditorApplication.isPlaying || running)
             {
@@ -84,6 +89,7 @@ namespace Game.Multiplayer.Editor
                         if (bridge.IsSpawned && bridge.NetworkManager == client) remote = bridge;
                     return remote != null && remote.CurrentState.Revision != 0;
                 }, "Bridge spawned and initial snapshot replicated");
+                Set(authority.GetComponentInChildren<InterviewController>(true), "useOllama", liveOllama);
                 Set(authority, "ready", true);
                 authority.StartNewRound();
                 await Same(authority, remote);
@@ -102,7 +108,7 @@ namespace Game.Multiplayer.Editor
                     "Each peer shows its assigned preparation UI");
                 Check(authority.GetComponentsInChildren<Canvas>(true).Length == 1 &&
                     remote.GetComponentsInChildren<Canvas>(true).Length == 1, "One gameplay Canvas per peer");
-                Check(Mathf.Abs(hostPreparation.RemainingSeconds - clientPreparation.RemainingSeconds) < 0.3f,
+                await Until(() => Mathf.Abs(hostPreparation.RemainingSeconds - clientPreparation.RemainingSeconds) < 0.3f,
                     "Countdown derives from a shared server deadline");
 
                 hostPreparation.RequestIdentityEdit(IdentityField.Name, "Unauthorized");
@@ -150,10 +156,9 @@ namespace Game.Multiplayer.Editor
                     "Enter on incomplete document highlights and focuses missing field");
                 nameField.text = "Alice";
                 Get<TMPro.TMP_InputField>(printView, "birthPlaceInput").text = "Enlaslov";
-                Get<TMPro.TMP_InputField>(printView, "issueDateInput").text = "1977-11-02";
-                var expiryField = Get<TMPro.TMP_InputField>(printView, "expiryDateInput");
-                Check(expiryField != null, "Bind the new Expiry Date Input in the Canvas before running UI integration checks");
-                expiryField.text = "1979-11-02";
+                Check(!Get<TMPro.TMP_InputField>(printView, "issueDateInput").gameObject.activeSelf &&
+                    !Get<TMPro.TMP_InputField>(printView, "expiryDateInput").gameObject.activeSelf,
+                    "Fixed passport dates have no editable UI");
                 Get<TMPro.TMP_InputField>(printView, "birthdayInput").text = "1950-04-12";
                 Get<TMPro.TMP_InputField>(printView, "passportCodeInput").text = "ID-42";
                 // Submit from the first field immediately, while the final edits are still in flight.
@@ -162,9 +167,9 @@ namespace Game.Multiplayer.Editor
                 Check(hostPreparation.PrintedIdentity.Name == "Alice", "Printed identity matches current identity");
                 Check(hostPreparation.PrintedIdentity.Birthday == "1950-04-12" &&
                     clientPreparation.PrintedIdentity.Birthday == "1950-04-12", "Birthday printed and replicated");
-                Check(hostPreparation.PrintedIdentity.IssueDate == "1977-11-02" &&
-                    hostPreparation.PrintedIdentity.ExpiryDate == "1979-11-02" &&
-                    clientPreparation.PrintedIdentity.ExpiryDate == "1979-11-02", "Passport dates survive printing and replication");
+                Check(hostPreparation.PrintedIdentity.IssueDate == IdentityCard.FixedIssueDate &&
+                    hostPreparation.PrintedIdentity.ExpiryDate == IdentityCard.FixedExpiryDate &&
+                    clientPreparation.PrintedIdentity.ExpiryDate == IdentityCard.FixedExpiryDate, "Fixed passport dates survive printing and replication");
                 Check(hostPreparation.PrintedIdentity.PassportCode == "ID-42" && !nameField.interactable &&
                     Get<GameObject>(printView, "printedStamp").activeSelf, "Enter waits for final edit, locks document and displays stamp");
                 clientPreparation.RequestIdentityEdit(IdentityField.Name, "Changed after print");
@@ -193,7 +198,7 @@ namespace Game.Multiplayer.Editor
                 Check(Get<GameObject>(remote.GetComponentInChildren<PreparationPreview>(true), "hackerInterview").activeSelf,
                     "Hacker interview desktop visible");
                 hostInterview.SubmitAnswer("Hello officer, my name is ALICE.");
-                await Until(() => clientInterview.QuestionIndex == 1, "Case/whitespace-insensitive answer advances both peers");
+                await Until(() => clientInterview.QuestionIndex == 1, "Case/whitespace-insensitive answer advances both peers", 65);
                 Replay(authority, "Answer", 0, "Alice", false);
                 await Task.Delay(150);
                 Check(hostInterview.QuestionIndex == 1, "Duplicate answer request ignored");
@@ -204,19 +209,29 @@ namespace Game.Multiplayer.Editor
                 await Task.Delay(150);
                 Check(hostInterview.QuestionIndex == 1, "Hacker cannot submit Traveler answers");
                 hostInterview.SubmitAnswer("I am coming from Enlaslov.");
-                await Until(() => clientInterview.QuestionIndex == 2, "Second answer replicated");
-                hostInterview.SubmitAnswer("Yes, I work as a Cultural Attache.");
-                await Until(() => clientInterview.QuestionIndex == 3, "Government role sentence replicated");
+                await Until(() => clientInterview.QuestionIndex == 2, "Second answer replicated", 65);
                 hostInterview.SubmitAnswer("My trip is for cultural connection.");
-                await Until(() => clientInterview.QuestionIndex == 4, "Task category sentence replicated");
-                hostInterview.SubmitAnswer("I plan to stay for two weeks.");
-                await Until(() => clientInterview.IsFinished, "Victory replicated");
+                await Until(() => clientInterview.QuestionIndex == 3, "Task category sentence replicated", 65);
+                Check(clientInterview.CurrentQuestion == hostInterview.CurrentQuestion, "Final wording matches both screens");
+                if (liveOllama)
+                {
+                    hostInterview.SubmitAnswer("Purple chairs sing bananas.");
+                    await Until(() => clientInterview.ReviewingPurpose, "Pending review replicated");
+                    Check(!clientInterview.QuestionTimerRunning, "Clock paused during review");
+                    await Until(() => !clientInterview.ReviewingPurpose, "Unrelated answer reviewed", 65);
+                    Check(!clientInterview.IsFinished && clientInterview.QuestionIndex == 3, "Unrelated answer can retry");
+                }
+                hostInterview.SubmitAnswer("Until my work here is done.");
+                await Until(() => clientInterview.IsFinished, "Victory replicated", 65);
                 Check(hostInterview.EntryApproved && clientInterview.EntryApproved, "Both peers approve entry");
                 Call(remote, "ApplySnapshot", remote.CurrentState);
                 Call(remote, "ApplySnapshot", remote.CurrentState);
                 Check(hostFinished == 1 && clientFinished == 1, "Duplicate final snapshots do not repeat Finished callbacks");
                 Check(Get<GameObject>(clientInterview, "gameOverPanel").activeSelf, "Remote GameOver UI displayed");
 
+                // Subsequent rounds exercise the deterministic fallback rules.
+                Set(hostInterview, "useOllama", false);
+                Set(clientInterview, "useOllama", false);
                 authority.StartNewRound();
                 await Until(() => remote.CurrentState.Round == 2, "Second round replicated");
                 Check(!clientInterview.IsFinished && clientInterview.QuestionIndex == 0 && clientInterview.Reputation == 50 &&
@@ -301,6 +316,7 @@ namespace Game.Multiplayer.Editor
                         if (bridge.IsSpawned && bridge.NetworkManager == client) remote = bridge;
                     return remote != null && remote.CurrentState.Revision != 0;
                 }, "Swapped-role game replicated");
+                Set(authority.GetComponentInChildren<InterviewController>(true), "useOllama", false);
                 Set(authority, "ready", true);
                 authority.StartNewRound();
                 await Same(authority, remote);
@@ -316,7 +332,8 @@ namespace Game.Multiplayer.Editor
                 await Until(() => !remote.GetComponentInChildren<InterviewController>(true).IsShowingIntroduction,
                     "Swapped-role introduction ended");
                 remote.GetComponentInChildren<InterviewController>(true).SubmitAnswer("HostHacker");
-                await Until(() => authority.CurrentState.QuestionIndex == 1, "Client Traveler can answer");
+                await Until(() => authority.CurrentState.QuestionIndex == 1 &&
+                    remote.CurrentState.QuestionIndex == 1, "Client Traveler can answer");
 
                 remote.GetComponentInChildren<InterviewController>(true).SubmitAnswer("Wrong nationality");
                 await Until(() => authority.CurrentState.IsFinished, "Finish swapped-role round for mismatch test");
@@ -360,12 +377,16 @@ namespace Game.Multiplayer.Editor
                 local.ApplyGovernmentEdit(GovernmentField.Category, "1");
                 local.AdvanceLocalTime(100);
                 var localInterview = offline.GetComponent<InterviewController>();
+                Set(localInterview, "useOllama", false); // Offline regression covers the deterministic option.
                 await Until(() => !localInterview.IsShowingIntroduction, "Offline introduction ended");
                 localInterview.EvaluateAnswer("local");
+                await Until(() => localInterview.QuestionIndex == 1, "Local name reviewed", 65);
                 localInterview.EvaluateAnswer("localland");
-                localInterview.EvaluateAnswer("I work as a diplomat.");
+                await Until(() => localInterview.QuestionIndex == 2, "Local origin reviewed", 65);
                 localInterview.EvaluateAnswer("My task concerns politics.");
+                await Until(() => localInterview.QuestionIndex == 3, "Local purpose reviewed", 65);
                 localInterview.EvaluateAnswer("A few days.");
+                await Until(() => localInterview.IsFinished, "Offline final answer reviewed", 65);
                 Check(localInterview.IsFinished && localInterview.EntryApproved, "Offline answer rules preserved");
                 Debug.Log($"COOP INTEGRATION CHECKS PASSED: {checks} checks; real NGO/Unity Transport loopback, timeout, swapped roles and offline regression. Relay and NGO scene-load synchronization were not exercised by this fixture.");
             }
@@ -390,9 +411,9 @@ namespace Game.Multiplayer.Editor
         private static async Task Same(CoopGameNetworkBridge host, CoopGameNetworkBridge client) =>
             await Until(() => client.CurrentState.Revision == host.CurrentState.Revision, "Round state replicated");
 
-        private static async Task Until(Func<bool> condition, string label)
+        private static async Task Until(Func<bool> condition, string label, int timeoutSeconds = 10)
         {
-            double deadline = EditorApplication.timeSinceStartup + 10;
+            double deadline = EditorApplication.timeSinceStartup + timeoutSeconds;
             while (!condition())
             {
                 if (EditorApplication.timeSinceStartup > deadline) throw new TimeoutException(label);
@@ -430,7 +451,7 @@ namespace Game.Multiplayer.Editor
             ulong id = Get<ulong>(bridge, "nextRequest");
             if (fresh) Set(bridge, "nextRequest", ++id);
             object action = Enum.Parse(typeof(CoopGameNetworkBridge).GetNestedType("Request", BindingFlags.NonPublic), request);
-            Call(bridge, "GameplayRequestRpc", round, id, action, argument, NetworkIdentity.Text(text), default(RpcParams));
+            Call(bridge, "GameplayRequestRpc", round, id, action, argument, NetworkIdentity.Text(text), bridge.CurrentState.QuestionEndsAt, default(RpcParams));
         }
     }
 }

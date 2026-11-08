@@ -119,6 +119,140 @@ NavMeshSettings:
     debug:
       m_Flags: 0
   m_NavMeshData: {fileID: 0}
+--- !u!1 &828335737
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 828335742}
+  - component: {fileID: 828335741}
+  - component: {fileID: 828335740}
+  - component: {fileID: 828335739}
+  - component: {fileID: 828335738}
+  m_Layer: 0
+  m_Name: TemporaryLoopbackHost
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &828335738
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828335737}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ff56604baca7a1e468439f69272744dd, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.OllamaRoomLifetime
+  interviewSettings: {fileID: 4259759875029901686, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+--- !u!114 &828335739
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828335737}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad77c68abaf84af6a3538970a3f4ca0d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.NetworkSessionManager
+  lobbyRoleSelectionPrefab: {fileID: 0}
+--- !u!114 &828335740
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828335737}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 593a2fe42fa9d37498c96f9a383b6521, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.NetworkManager
+  NetworkManagerExpanded: 0
+  NetworkConfig:
+    ProtocolVersion: 0
+    NetworkTransport: {fileID: 828335741}
+    PlayerPrefab: {fileID: 0}
+    Prefabs:
+      NetworkPrefabsLists: []
+    TickRate: 30
+    ClientConnectionBufferTimeout: 10
+    ConnectionApproval: 1
+    ConnectionData: 
+    EnableTimeResync: 0
+    TimeResyncInterval: 30
+    EnsureNetworkVariableLengthSafety: 0
+    EnableSceneManagement: 0
+    ForceSamePrefabs: 1
+    RecycleNetworkIds: 1
+    NetworkIdRecycleDelay: 120
+    RpcHashSize: 0
+    LoadSceneTimeOut: 120
+    SpawnTimeout: 10
+    EnableNetworkLogs: 1
+    NetworkTopology: 0
+    UseCMBService: 0
+    AutoSpawnPlayerPrefabClientSide: 1
+    NetworkMessageMetrics: 1
+    NetworkProfilingMetrics: 1
+    OldPrefabList: []
+  RunInBackground: 1
+  LogLevel: 1
+--- !u!114 &828335741
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828335737}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6960e84d07fb87f47956e7a81d71c4e6, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Unity.Netcode.Runtime::Unity.Netcode.Transports.UTP.UnityTransport
+  m_ProtocolType: 0
+  m_UseWebSockets: 0
+  m_UseEncryption: 0
+  m_MaxPacketQueueSize: 128
+  m_MaxPayloadSize: 6144
+  m_HeartbeatTimeoutMS: 500
+  m_ConnectTimeoutMS: 1000
+  m_MaxConnectAttempts: 60
+  m_DisconnectTimeoutMS: 30000
+  ConnectionData:
+    Address: 127.0.0.1
+    Port: 7777
+    WebSocketPath: /
+    ServerListenAddress: 
+    ClientBindPort: 0
+  DebugSimulator:
+    PacketDelayMS: 0
+    PacketJitterMS: 0
+    PacketDropRate: 0
+--- !u!4 &828335742
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 828335737}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1552805628
 GameObject:
   m_ObjectHideFlags: 0
@@ -371,6 +505,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Canvas
       objectReference: {fileID: 0}
+    - target: {fileID: 917159628884910850, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_IsActive
+      value: 1
+      objectReference: {fileID: 0}
     - target: {fileID: 1066530206597339020, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchorMax.x
       value: 0
@@ -378,6 +516,22 @@ PrefabInstance:
     - target: {fileID: 1066530206597339020, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchorMax.y
       value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1067809474435415913, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -0.00012207031
+      objectReference: {fileID: 0}
+    - target: {fileID: 1198712232523330861, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1198712232523330861, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1392644398341039712, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: 15.000977
       objectReference: {fileID: 0}
     - target: {fileID: 1791966155392703808, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_SizeDelta.y
@@ -409,15 +563,15 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 3400218085904156182, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchorMax.x
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3400218085904156182, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchorMax.y
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3400218085904156182, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchorMin.x
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3738581616274211257, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_Pivot.x
@@ -499,6 +653,10 @@ PrefabInstance:
       propertyPath: m_LocalEulerAnglesHint.z
       value: 0
       objectReference: {fileID: 0}
+    - target: {fileID: 4706781726636117768, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -1.5498047
+      objectReference: {fileID: 0}
     - target: {fileID: 5224117632350376153, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchorMax.x
       value: 0
@@ -514,6 +672,14 @@ PrefabInstance:
     - target: {fileID: 5337666818657987074, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_MatchWidthOrHeight
       value: 0.5
+      objectReference: {fileID: 0}
+    - target: {fileID: 6377029899933919351, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_AnchoredPosition.x
+      value: -15.000977
+      objectReference: {fileID: 0}
+    - target: {fileID: 6785830277378656302, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
+      propertyPath: m_fontColor32.rgba
+      value: 4291417559
       objectReference: {fileID: 0}
     - target: {fileID: 7013688283902971310, guid: 94541992f9a434441900b5b184ebddf6, type: 3}
       propertyPath: m_AnchoredPosition.y
@@ -539,3 +705,4 @@ SceneRoots:
   - {fileID: 1552805631}
   - {fileID: 7272663236253564774}
   - {fileID: 1560732704}
+  - {fileID: 828335742}

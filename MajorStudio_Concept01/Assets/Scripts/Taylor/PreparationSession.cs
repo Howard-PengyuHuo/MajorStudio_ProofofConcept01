@@ -11,9 +11,13 @@ namespace CarryOn.Taylor
     public struct IdentityCard
     {
         public string Name, BirthPlace, IssueDate, PassportCode, ExpiryDate, Birthday;
+        // Keep the legacy storage/wire field for existing prefabs and network serialization.
+        public string Nationality { get => BirthPlace; set => BirthPlace = value; }
+        public const string FixedIssueDate = "1976-01-21";
+        public const string FixedExpiryDate = "1980-01-21";
         public bool IsComplete => !string.IsNullOrWhiteSpace(Name) &&
-            !string.IsNullOrWhiteSpace(BirthPlace) && !string.IsNullOrWhiteSpace(IssueDate) &&
-            !string.IsNullOrWhiteSpace(PassportCode) && !string.IsNullOrWhiteSpace(ExpiryDate) &&
+            !string.IsNullOrWhiteSpace(Nationality) &&
+            !string.IsNullOrWhiteSpace(PassportCode) &&
             !string.IsNullOrWhiteSpace(Birthday);
     }
 
@@ -61,7 +65,7 @@ namespace CarryOn.Taylor
             Government = default;
             PrintedGovernment = default;
             HasPrintedGovernment = false;
-            Identity = new IdentityCard();
+            Identity = new IdentityCard { IssueDate = IdentityCard.FixedIssueDate, ExpiryDate = IdentityCard.FixedExpiryDate };
             PrintedIdentity = new IdentityCard();
             HasPrintedIdentity = false;
             RemainingSeconds = Mathf.Max(0, duration);
@@ -88,9 +92,9 @@ namespace CarryOn.Taylor
             {
                 case IdentityField.Name: card.Name = value; break;
                 case IdentityField.BirthPlace: card.BirthPlace = value; break;
-                case IdentityField.IssueDate: card.IssueDate = value; break;
+                case IdentityField.IssueDate: return; // Printed on the new passport artwork.
                 case IdentityField.PassportCode: card.PassportCode = value; break;
-                case IdentityField.ExpiryDate: card.ExpiryDate = value; break;
+                case IdentityField.ExpiryDate: return;
                 case IdentityField.Birthday: card.Birthday = value; break;
                 default: return;
             }
@@ -128,9 +132,10 @@ namespace CarryOn.Taylor
         public void AdvanceLocalTime(float seconds)
         {
             if (!localSimulation || Phase != EntryPhase.Preparation || seconds < 0) return;
+            int previousSecond = Mathf.CeilToInt(RemainingSeconds);
             RemainingSeconds = Mathf.Max(0, RemainingSeconds - seconds);
             if (RemainingSeconds <= 0) FinishPreparation();
-            else Changed?.Invoke();
+            else if (previousSecond != Mathf.CeilToInt(RemainingSeconds)) Changed?.Invoke();
         }
 
         private void FinishPreparation()

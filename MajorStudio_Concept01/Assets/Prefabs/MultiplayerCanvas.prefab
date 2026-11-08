@@ -6498,6 +6498,7 @@ GameObject:
   - component: {fileID: 7795293903169427701}
   - component: {fileID: 8914611443725694088}
   - component: {fileID: 4774721356777186891}
+  - component: {fileID: 4556553852826228641}
   m_Layer: 0
   m_Name: JoinCodeInput
   m_TagString: Untagged
@@ -6652,6 +6653,18 @@ MonoBehaviour:
   m_FlexibleWidth: -1
   m_FlexibleHeight: -1
   m_LayoutPriority: 1
+--- !u!114 &4556553852826228641
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 6264583631266785829}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 739c7acacbf586f419ea2939d113526b, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CarryOn.Taylor.UppercasePlayerInput
 --- !u!1 &6304465880839754667
 GameObject:
   m_ObjectHideFlags: 0
