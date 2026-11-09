@@ -13,10 +13,6 @@ namespace Game.Multiplayer
     public sealed class LobbyUI : MonoBehaviour
     {
         [SerializeField] private GameObject multiplayerCanvasPrefab;
-        [Tooltip("Rebound to the existing local Canvas instance in Awake; never edits the prefab asset.")]
-        [SerializeField] private Image lobbyPanelImage;
-        [SerializeField] private Sprite playerOneLobbyBackground;
-        [SerializeField] private Sprite playerTwoLobbyBackground;
 
         private NetworkSessionManager session;
         private VoiceChatManager voice;
@@ -30,12 +26,14 @@ namespace Game.Multiplayer
         private Button leaveButton;
         private Button exitBackButton;
         private Button startGameButton;
+        private GameObject roleSelectionPanel;
+        private Button travelerButton, hackerButton, releaseRoleButton, readyButton;
+        private Text roleAssignmentsText, roleSelectionStatus, readyButtonLabel;
         private Text menuStatusText;
         private Text joinCodeText;
         private Text playerCountText;
         private Text playerStatusText;
         private bool initialized;
-        private bool missingBackgroundReported;
 
         private void Awake()
         {
@@ -61,7 +59,6 @@ namespace Game.Multiplayer
             session.PlayersChanged += OnPlayersChanged;
             session.JoinCodeChanged += OnJoinCodeChanged;
             session.LobbyChanged += RefreshRoles;
-            Canvas.willRenderCanvases += RefreshVisibleLobbyBackground;
             if (voice != null) voice.Changed += OnVoiceChanged;
             RefreshAll();
         }
@@ -75,7 +72,6 @@ namespace Game.Multiplayer
             session.PlayersChanged -= OnPlayersChanged;
             session.JoinCodeChanged -= OnJoinCodeChanged;
             session.LobbyChanged -= RefreshRoles;
-            Canvas.willRenderCanvases -= RefreshVisibleLobbyBackground;
             if (voice != null) voice.Changed -= OnVoiceChanged;
         }
 
@@ -106,9 +102,6 @@ namespace Game.Multiplayer
             bool valid = true;
             valid &= TryBind(root, "MainMenuPanel", out mainMenuPanel);
             valid &= TryBind(root, "LobbyPanel", out lobbyPanel);
-            valid &= TryBind(root, "LobbyPanel", out lobbyPanelImage);
-            if (playerOneLobbyBackground == null && lobbyPanelImage != null)
-                playerOneLobbyBackground = lobbyPanelImage.sprite;
             valid &= TryBind(root, "JoinCodeInput", out joinCodeInput);
             valid &= TryBind(root, "CreateRoomButton", out createButton);
             valid &= TryBind(root, "JoinRoomButton", out joinButton);
@@ -120,6 +113,15 @@ namespace Game.Multiplayer
             valid &= TryBind(root, "JoinCodeText", out joinCodeText);
             valid &= TryBind(root, "PlayerCountText", out playerCountText);
             valid &= TryBind(root, "PlayerStatusText", out playerStatusText);
+            valid &= TryBind(root, "RoleSelectionPanel", out roleSelectionPanel);
+            valid &= TryBind(root, "TravelerRoleButton", out travelerButton);
+            valid &= TryBind(root, "HackerRoleButton", out hackerButton);
+            valid &= TryBind(root, "ReleaseRoleButton", out releaseRoleButton);
+            valid &= TryBind(root, "ReadyButton", out readyButton);
+            valid &= TryBind(root, "RoleAssignmentsText", out roleAssignmentsText);
+            valid &= TryBind(root, "RoleSelectionStatus", out roleSelectionStatus);
+            if (readyButton != null) readyButtonLabel = readyButton.GetComponentInChildren<Text>(true);
+            valid &= readyButtonLabel != null;
 
             if (!valid)
                 Debug.LogError($"{nameof(LobbyUI)} could not bind the required controls in " +
@@ -209,6 +211,10 @@ namespace Game.Multiplayer
             exitBackButton.onClick.AddListener(LeaveRoom);
             startGameButton.onClick.RemoveListener(StartGame);
             startGameButton.onClick.AddListener(StartGame);
+            travelerButton.onClick.AddListener(SelectTraveler);
+            hackerButton.onClick.AddListener(SelectHacker);
+            releaseRoleButton.onClick.AddListener(ReleaseRole);
+            readyButton.onClick.AddListener(ToggleReady);
         }
 
         private void UnbindButtonListeners()
@@ -219,7 +225,16 @@ namespace Game.Multiplayer
             leaveButton.onClick.RemoveListener(LeaveRoom);
             exitBackButton.onClick.RemoveListener(LeaveRoom);
             startGameButton.onClick.RemoveListener(StartGame);
+            travelerButton.onClick.RemoveListener(SelectTraveler);
+            hackerButton.onClick.RemoveListener(SelectHacker);
+            releaseRoleButton.onClick.RemoveListener(ReleaseRole);
+            readyButton.onClick.RemoveListener(ToggleReady);
         }
+
+        private void SelectTraveler() => session.RoleSelection?.SelectRole(LobbyRole.Traveler);
+        private void SelectHacker() => session.RoleSelection?.SelectRole(LobbyRole.Hacker);
+        private void ReleaseRole() => session.RoleSelection?.ReleaseRole();
+        private void ToggleReady() => session.RoleSelection?.ToggleReady();
 
         private void StartGame() => session.StartGame();
 
@@ -247,11 +262,11 @@ namespace Game.Multiplayer
 
         private void OnStateChanged(ConnectionState state, string message)
         {
-            RefreshLobbyBackground();
-            multiplayerCanvasInstance.SetActive(!session.IsInGame && !session.IsInCutscene);
+            multiplayerCanvasInstance.SetActive(!session.IsInGame);
             bool showLobby = state == ConnectionState.Connected;
             mainMenuPanel.SetActive(!showLobby);
             lobbyPanel.SetActive(showLobby);
+            roleSelectionPanel.SetActive(showLobby);
             menuStatusText.text = message;
             createButton.interactable = !session.IsBusy;
             joinButton.interactable = !session.IsBusy;
@@ -262,50 +277,33 @@ namespace Game.Multiplayer
 
         private void RefreshRoles()
         {
-            RefreshLobbyBackground();
-            multiplayerCanvasInstance.SetActive(!session.IsInGame && !session.IsInCutscene &&
-                (session.RoleSelection == null || !session.RoleSelection.Current.GameStarted));
+            var selection = session.RoleSelection;
+            var state = selection != null ? selection.Current : default;
+            roleAssignmentsText.text = DescribeSelection("Host", state.Host) + "\n\n" +
+                DescribeSelection("Client", state.Client);
+            bool hasPlayer = false;
+            LobbyPlayerSelection local = default;
+            if (selection != null) hasPlayer = selection.TryGetLocalPlayer(out local);
+            bool unlocked = hasPlayer && !state.GameStarted && !session.IsInGame && !selection.HasPendingRequest;
+            bool canSelect = unlocked && !local.Ready;
+            travelerButton.interactable = canSelect && local.Role != LobbyRole.Traveler &&
+                !state.IsOccupied(LobbyRole.Traveler, local.ClientId);
+            hackerButton.interactable = canSelect && local.Role != LobbyRole.Hacker &&
+                !state.IsOccupied(LobbyRole.Hacker, local.ClientId);
+            releaseRoleButton.interactable = canSelect && local.Role != LobbyRole.Unassigned;
+            readyButton.interactable = unlocked && local.Role != LobbyRole.Unassigned;
+            readyButtonLabel.text = local.Ready ? "CANCEL READY" : "READY";
+            roleSelectionStatus.text = selection != null ? selection.Feedback : "Synchronizing Lobby roles...";
             RefreshStartButton();
         }
 
-        private void RefreshLobbyBackground()
-        {
-            // Never write to the prefab reference or a stale Canvas instance.
-            if (lobbyPanel != null && (lobbyPanelImage == null || lobbyPanelImage.gameObject != lobbyPanel))
-                lobbyPanelImage = lobbyPanel.GetComponent<Image>();
-            // Host/Client is a local network identity, unrelated to player count or gameplay role.
-            // Reset to P1 outside a connected session so a former Client can create a new Host room.
-            Sprite background = session.State == ConnectionState.Connected && !session.IsHost
-                ? playerTwoLobbyBackground : playerOneLobbyBackground;
-            if (lobbyPanelImage == null || background == null)
-            {
-                if (!missingBackgroundReported)
-                    Debug.LogError("Lobby background reference is missing. Assign the LobbyPanel Image and both player sprites on LobbyUI.", this);
-                missingBackgroundReported = true;
-                return;
-            }
-            missingBackgroundReported = false;
-            if (lobbyPanelImage.sprite != background || lobbyPanelImage.overrideSprite != background)
-            {
-                // A transient Image override takes precedence over sprite in uGUI.
-                lobbyPanelImage.overrideSprite = null;
-                lobbyPanelImage.sprite = background;
-            }
-        }
-
-        private void RefreshVisibleLobbyBackground()
-        {
-            // Also cover reactivation after gameplay, external panel activation and initialization order.
-            // The setter is only touched when the actual displayed sprite differs.
-            if (initialized && session != null && lobbyPanel != null && lobbyPanel.activeInHierarchy)
-                RefreshLobbyBackground();
-        }
+        private static string DescribeSelection(string connection, LobbyPlayerSelection player) => player.Connected
+            ? $"{connection} (Client ID {player.ClientId})\n{player.Role} - {(player.Ready ? "Ready" : "Not Ready")}"
+            : $"{connection}: Disconnected\nRole available";
 
         private void OnPlayersChanged(IReadOnlyList<NetworkPlayerInfo> players)
         {
-            RefreshLobbyBackground();
-            //playerCountText.text = $"Players: {players.Count} / {NetworkSessionManager.MaximumPlayers}";
-            playerCountText.text = $"{players.Count} / {NetworkSessionManager.MaximumPlayers}";
+            playerCountText.text = $"Players: {players.Count} / {NetworkSessionManager.MaximumPlayers}";
             StringBuilder status = new();
             for (int index = 0; index < NetworkSessionManager.MaximumPlayers; index++)
             {
@@ -313,13 +311,11 @@ namespace Game.Multiplayer
                 {
                     NetworkPlayerInfo player = players[index];
                     string role = player.IsHost ? "Host" : "Client";
-                    //status.AppendLine($"Player {index + 1}: Connected  (Client ID {player.ClientId}, {role})");
-                    status.AppendLine($"P{(player.IsHost ? 1 : 2)} ({role}): Connected");
+                    status.AppendLine($"Player {index + 1}: Connected  (Client ID {player.ClientId}, {role})");
                 }
                 else
                 {
-                    //status.AppendLine($"Player {index + 1}: Waiting...");
-                    status.AppendLine($"P{index + 1} ({(index == 0 ? "Host" : "Client")}): Disconnected");
+                    status.AppendLine($"Player {index + 1}: Waiting...");
                 }
             }
 
@@ -338,7 +334,7 @@ namespace Game.Multiplayer
 
         private void OnJoinCodeChanged(string code)
         {
-            joinCodeText.text = string.IsNullOrEmpty(code) ? "Join Code: unavailable" : $"{code}";
+            joinCodeText.text = string.IsNullOrEmpty(code) ? "Join Code: unavailable" : $"Join Code: {code}";
             copyButton.gameObject.SetActive(session.IsHost && !string.IsNullOrEmpty(code));
         }
 

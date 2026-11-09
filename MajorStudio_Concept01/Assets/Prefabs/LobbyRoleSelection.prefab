@@ -73,5 +73,3 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.LobbyRoleSelection
   ShowTopMostFoldoutHeaderGroup: 1
-  cutscenePrefab: {fileID: 5953162136012440306, guid: 508cff0387d324895a40a751d4b3af75, type: 3}
-  countdownDuration: 10
