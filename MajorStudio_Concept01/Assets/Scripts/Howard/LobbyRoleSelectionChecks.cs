@@ -59,9 +59,13 @@ namespace Game.Multiplayer.Editor
                 var hostView = roles.GetComponentInChildren<CutsceneCarousel>();
                 Set(hostView, "transitionDuration", 0.1f);
                 foreach (var panel in Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics"))
+                {
                     panel.postNarrationHoldDuration = 0.1f;
+                    foreach (var segment in panel.narration) segment.duration = 0.25f;
+                }
+                Set(hostView, "selectionScaleDuration", 0.2f);
                 Set(roles, "countdownDuration", 1f);
-                Set(hostView, "automaticallyCompleteNarration", false);
+                CheckCarouselModes(hostView);
                 var clientObject = new GameObject("CutsceneCheckClient");
                 clientObject.SetActive(false);
                 var clientTransport = clientObject.AddComponent<UnityTransport>();
@@ -81,6 +85,7 @@ namespace Game.Multiplayer.Editor
                     clientSession.RoleSelection.Current.Client.Connected, "Client connected with authoritative slots");
                 var remote = clientSession.RoleSelection;
                 var clientView = remote.GetComponentInChildren<CutsceneCarousel>();
+                CheckLobbyBackgrounds(hostSession, clientSession);
                 Check(hostSession.CanStartGame && !clientSession.CanStartGame, "Two players enables only Host Start without Ready");
                 Check(roles.Current.Client.Role == LobbyRole.Unassigned, "Client has no default role");
                 remote.SelectRole(LobbyRole.Traveler);
@@ -92,15 +97,40 @@ namespace Game.Multiplayer.Editor
                 uint firstSequence = roles.Current.ComicSequence;
                 hostSession.StartGame();
                 Check(roles.Current.ComicSequence == firstSequence && !hostSession.IsInGame, "Double Start begins one introduction, not gameplay");
-                await Until(() => roles.Current.Stage == SessionStage.ComicNarration, "Narration starts after entrance");
-                await Task.Delay(200);
-                Check(roles.Current.Stage == SessionStage.ComicNarration, "Narration waits for completion");
-                roles.NotifyNarrationCompleted(0, firstSequence - 1);
-                await Task.Delay(100);
-                Check(roles.Current.Stage == SessionStage.ComicNarration, "Stale narration token ignored");
-                Set(hostView, "automaticallyCompleteNarration", true);
-                roles.NotifyNarrationCompleted(0, firstSequence);
+                for (int comic = 0; comic < 3; comic++)
+                {
+                    for (int segment = 0; segment < hostView.SegmentCount(comic); segment++)
+                    {
+                        await Until(() => remote.Current.Stage == SessionStage.ComicNarration &&
+                            remote.Current.ComicIndex == comic && remote.Current.NarrationSegmentIndex == segment,
+                            $"Both peers receive comic {comic + 1} segment {segment + 1}");
+                        Check(Get<Text>(hostView, "narrationText").text == Get<Text>(clientView, "narrationText").text &&
+                            Get<Text>(hostView, "narrationText").text == Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics")[comic].narration[segment].text,
+                            "Both peers render exact authored segment");
+                        var text = Get<Text>(hostView, "narrationText");
+                        Check(text.preferredHeight <= text.rectTransform.rect.height, "Narration fits existing text box without changing font or layout");
+                        Check(Math.Abs(remote.Current.StageEndsAt - remote.Current.StageStartedAt - 0.25) < 0.001,
+                            "Segment duration is Host-configured, not Client's four-second default");
+                        var before = roles.Current;
+                        remote.NotifyNarrationCompleted(comic, before.ComicSequence);
+                        roles.NotifyNarrationCompleted(comic, before.ComicSequence - 1);
+                        roles.NotifyNarrationCompleted(comic, before.ComicSequence);
+                        Check(roles.Current.Equals(before), "Client, stale and premature completion cannot skip narration");
+                    }
+                    await Until(() => remote.Current.Stage == SessionStage.ComicHold && remote.Current.ComicIndex == comic,
+                        "Separate post-narration hold replicated");
+                    Check(Math.Abs(remote.Current.StageEndsAt - remote.Current.StageStartedAt - 0.1) < 0.001,
+                        "Hold has its own configurable deadline");
+                }
+                await Until(() => remote.Current.Stage == SessionStage.SelectionEntering, "Authoritative scale transition received");
+                Check(!Get<GameObject>(clientView, "characterSelection").activeSelf &&
+                    !Get<Text>(clientView, "narrationText").gameObject.activeSelf, "No narration or interactive selection during scale-up");
                 await Until(() => remote.Current.Stage == SessionStage.CharacterSelection, "Three comics complete and enable selection only");
+                Check(hostView.FrameRectTransform.localScale == Vector3.one && clientView.FrameRectTransform.localScale == Vector3.one &&
+                    Get<CutsceneCarousel.ComicPanel[]>(clientView, "comics")[2].image.rectTransform.localScale == Vector3.one,
+                    "Final frame and Comic 3 reach exactly one on both peers");
+                Check(Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics")[0].image.rectTransform.localScale == Vector3.one * 0.8f,
+                    "Comic 1 retains its authored reduced scale");
                 Check(roles.Current.ComicIndex == 2 && !roles.Current.CountdownActive && !hostSession.IsInGame,
                     "Final comic waits for distinct selections; no premature gameplay");
                 CheckLocalHover(hostView, clientView, roles);
@@ -169,7 +199,12 @@ namespace Game.Multiplayer.Editor
                 roles.ReturnToLobby();
                 await Until(() => remote.Current.Stage == SessionStage.Lobby, "Return to Lobby resets introduction and roles");
                 Check(hostSession.CanStartGame && roles.Current.Host.Role == LobbyRole.Unassigned, "Two connected players can start again without Ready");
+                Set(hostView, "rotationMode", CarouselRotationMode.ComicAndFrame);
+                Set(clientView, "rotationMode", CarouselRotationMode.ComicAndFrame);
                 hostSession.StartGame();
+                Check(hostView.FrameRectTransform.localScale != Vector3.one &&
+                    Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics")[2].image.rectTransform.localScale == Vector3.one * 0.8f,
+                    "Replay resets selection scales to authored baselines");
                 await Until(() => roles.Current.Stage == SessionStage.CharacterSelection, "Second introduction completes with fresh sequences");
                 roles.SelectRole(LobbyRole.Traveler);
                 remote.SelectRole(LobbyRole.Hacker);
@@ -199,6 +234,66 @@ namespace Game.Multiplayer.Editor
                 protocolField.SetValue(transport, originalProtocol);
                 running = false;
             }
+        }
+
+        private static void CheckLobbyBackgrounds(NetworkSessionManager host, NetworkSessionManager client)
+        {
+            // Reuse the authored UI only for this fixture; production peers each own their own Canvas.
+            var ui = host.GetComponent<LobbyUI>();
+            var image = Get<Image>(ui, "lobbyPanelImage");
+            var original = Get<Sprite>(ui, "playerOneLobbyBackground");
+            var second = Get<Sprite>(ui, "playerTwoLobbyBackground");
+            Debug.Log($"LOBBY BACKGROUND DIAGNOSTIC: image={image.name}, scene={image.gameObject.scene.name}, " +
+                $"P1={original?.name}, P2={second?.name}, hostState={host.State}, clientState={client.State}, clientIsHost={client.IsHost}");
+            Check(second != null && second.name == "Lobby Main Interface_Player2_0", "Exact P2 sprite resolves in Editor");
+            try
+            {
+                Set(ui, "session", client);
+                Call(client, "SetState", ConnectionState.Connected, "Connected fixture");
+                Call(ui, "RefreshAll");
+                Check(image.sprite == second && image.overrideSprite == second, "Connected Client displays P2 on actual passport Image");
+                image.overrideSprite = original;
+                Call(ui, "RefreshVisibleLobbyBackground");
+                Check(image.overrideSprite == second, "Visible Lobby refresh clears stale sprite overrides");
+                image.gameObject.SetActive(false);
+                image.sprite = original;
+                image.gameObject.SetActive(true);
+                Call(ui, "RefreshVisibleLobbyBackground");
+                Check(image.sprite == second, "Reactivating Lobby reapplies Client identity");
+                Call(client, "SetState", ConnectionState.Disconnected, "Disconnected fixture");
+                Call(ui, "RefreshAll");
+                Check(image.sprite == original, "Client leaving resets background");
+                Call(client, "SetState", ConnectionState.Connected, "Connected fixture");
+                Call(ui, "RefreshAll");
+                Check(image.sprite == second, "Client reconnect reapplies P2 background");
+            }
+            finally { Set(ui, "session", host); Call(ui, "RefreshAll"); }
+            Check(image.sprite == original && image.overrideSprite == original, "Host retains P1 after role swap");
+        }
+
+        private static void CheckCarouselModes(CutsceneCarousel view)
+        {
+            var panels = Get<CutsceneCarousel.ComicPanel[]>(view, "comics");
+            Vector2 center = view.FrameRectTransform.anchoredPosition;
+            for (int index = 1; index <= 2; index++)
+            {
+                var state = new LobbyRoleState { ComicIndex = index, Stage = SessionStage.ComicEntering };
+                foreach (float progress in new[] { 0f, 0.25f, 0.5f, 0.75f, 1f })
+                {
+                    Call(view, "AnimateComicOnlyRotation", state, true, progress);
+                    Check(view.FrameRectTransform.anchoredPosition == center && view.FrameRectTransform.localScale == Vector3.one * 0.8f,
+                        "ComicOnly keeps frame stationary at authored scale");
+                    Call(view, "AnimateComicAndFrameRotation", state, true, progress);
+                    for (int i = index - 1; i <= index; i++)
+                    {
+                        var frame = panels[i].rotatingFrame.rectTransform;
+                        var comic = panels[i].image.rectTransform;
+                        Check(frame.localScale == comic.localScale && frame.localRotation == comic.localRotation &&
+                            frame.GetSiblingIndex() + 1 == comic.GetSiblingIndex(), "Paired frame follows depth/rotation directly behind comic");
+                    }
+                }
+            }
+            Call(view, "AnimateComicOnlyRotation", new LobbyRoleState { ComicIndex = 0 }, false, 1f);
         }
 
         private static async Task CheckLobbyArtwork(NetworkSessionManager session)

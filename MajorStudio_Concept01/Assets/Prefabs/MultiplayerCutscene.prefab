@@ -34,8 +34,8 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 2.8104, y: -455}
-  m_SizeDelta: {x: 1300, y: 70}
+  m_AnchoredPosition: {x: 22.989, y: -447.70068}
+  m_SizeDelta: {x: 1009.4, y: 158.9441}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &932187016118402647
 CanvasRenderer:
@@ -109,7 +109,9 @@ RectTransform:
   m_Children:
   - {fileID: 3781676473551068207}
   - {fileID: 2400764141881596037}
+  - {fileID: 910000000000000011}
   - {fileID: 85746530981950188}
+  - {fileID: 910000000000000021}
   - {fileID: 5503015624622335976}
   - {fileID: 776541100222221506}
   - {fileID: 3964083370895109610}
@@ -201,6 +203,156 @@ MonoBehaviour:
     m_VerticalOverflow: 0
     m_LineSpacing: 1
   m_Text: LEAVE ROOM
+--- !u!1 &910000000000000010
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 910000000000000011}
+  - component: {fileID: 910000000000000012}
+  - component: {fileID: 910000000000000013}
+  m_Layer: 0
+  m_Name: Comic1Frame
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!224 &910000000000000011
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910000000000000010}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 0.8, y: 0.8, z: 0.8}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 4354560563248070895}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 33.443, y: -41}
+  m_SizeDelta: {x: 1026.8, y: 792.1838}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!222 &910000000000000012
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910000000000000010}
+  m_CullTransparentMesh: 1
+--- !u!114 &910000000000000013
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910000000000000010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 0.55, g: 0.58, b: 0.61, a: 1}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: -5668518402485374812, guid: 5bb8a685d7acb4f63aa9fe04c9aca3ce, type: 3}
+  m_Type: 0
+  m_PreserveAspect: 1
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
+--- !u!1 &910000000000000020
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 910000000000000021}
+  - component: {fileID: 910000000000000022}
+  - component: {fileID: 910000000000000023}
+  m_Layer: 0
+  m_Name: Comic2Frame
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 0
+--- !u!224 &910000000000000021
+RectTransform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910000000000000020}
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 0.8, y: 0.8, z: 0.8}
+  m_ConstrainProportionsScale: 1
+  m_Children: []
+  m_Father: {fileID: 4354560563248070895}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_AnchorMin: {x: 0.5, y: 0.5}
+  m_AnchorMax: {x: 0.5, y: 0.5}
+  m_AnchoredPosition: {x: 33.443, y: -41}
+  m_SizeDelta: {x: 1026.8, y: 792.1838}
+  m_Pivot: {x: 0.5, y: 0.5}
+--- !u!222 &910000000000000022
+CanvasRenderer:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910000000000000020}
+  m_CullTransparentMesh: 1
+--- !u!114 &910000000000000023
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 910000000000000020}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fe87c0e1cc204ed48ad3b37840f39efc, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: UnityEngine.UI::UnityEngine.UI.Image
+  m_Material: {fileID: 0}
+  m_Color: {r: 0.55, g: 0.58, b: 0.61, a: 1}
+  m_RaycastTarget: 0
+  m_RaycastPadding: {x: 0, y: 0, z: 0, w: 0}
+  m_Maskable: 1
+  m_OnCullStateChanged:
+    m_PersistentCalls:
+      m_Calls: []
+  m_Sprite: {fileID: -5668518402485374812, guid: 5bb8a685d7acb4f63aa9fe04c9aca3ce, type: 3}
+  m_Type: 0
+  m_PreserveAspect: 1
+  m_FillCenter: 1
+  m_FillMethod: 4
+  m_FillAmount: 1
+  m_FillClockwise: 1
+  m_FillOrigin: 0
+  m_UseSpriteMesh: 0
+  m_PixelsPerUnitMultiplier: 1
 --- !u!1 &3124417692262834973
 GameObject:
   m_ObjectHideFlags: 0
@@ -566,7 +718,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: 20}
+  m_AnchoredPosition: {x: 24, y: -103}
   m_SizeDelta: {x: 48, y: 48}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!222 &2507813892088133753
@@ -791,7 +943,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 0.5}
   m_AnchorMax: {x: 0.5, y: 0.5}
-  m_AnchoredPosition: {x: 33.443, y: -41}
+  m_AnchoredPosition: {x: 33, y: -41}
   m_SizeDelta: {x: 1026.8, y: 792.1838}
   m_Pivot: {x: 0.5, y: 0.5}
 --- !u!222 &2647634956846596495
@@ -1207,12 +1359,48 @@ MonoBehaviour:
   frameImage: {fileID: 113748764869238881}
   comics:
   - image: {fileID: 2046205921878488515}
-    postNarrationHoldDuration: 3
+    rotatingFrame: {fileID: 910000000000000013}
+    narration:
+    - text: "[NATIONAL SECURITY ALERT] \nFederal authorities warn of a high-risk
+        cult operating out of Hyarinth Town under the moniker People\u2019s Community
+        Church.\nThe group reportedly maintains a strict internal hierarchy and engages
+        in suspect recruitment activities.\nCitizens are urged to remain vigilant
+        and report suspicious activity to local authorities. Stay alert. Stay safe."
+      duration: 10
+    - text: The group reportedly maintains a strict internal hierarchy and engages
+        in suspect recruitment activities.
+      duration: 0.1
+    - text: Citizens are urged to remain vigilant and report suspicious activity
+        to local authorities. Stay alert. Stay safe.
+      duration: 0.1
+    postNarrationHoldDuration: 10
   - image: {fileID: 8889595164076323223}
+    rotatingFrame: {fileID: 910000000000000023}
+    narration:
+    - text: "According to intel, the dangerous cult People\u2019s Community Church
+        is led by John Jonathan (alias: Heavenly Father) and headquartered in Hyarinth
+        Town.\nYour mission is to infiltrate the community and gain access to their
+        plan.\nTo pass the checkpoint, you must use the persona crafted by the \"briefcase\".
+        Good luck!"
+      duration: 10
+    - text: Your mission is to infiltrate the community and gain access to their
+        plan.
+      duration: 0.1
+    - text: To pass the checkpoint, you must use the persona crafted by the "briefcase".
+        Good luck!
+      duration: 0.1
     postNarrationHoldDuration: 3
   - image: {fileID: 1771709717087299029}
+    rotatingFrame: {fileID: 113748764869238881}
+    narration:
+    - text: 'Landed at Hyarinth Town local airport.
+
+        Time: 18:55'
+      duration: 0.1
     postNarrationHoldDuration: 3
   transitionDuration: 1.2
+  rotationMode: 0
+  selectionScaleDuration: 0.6
   carouselRadius: {x: 1400, y: 420}
   characterSelection: {fileID: 6882344183579441508}
   personButton: {fileID: 6643336473904741768}
@@ -1222,10 +1410,9 @@ MonoBehaviour:
   briefcaseMarker: {fileID: 322639416839572760}
   playerOneMarkerSprite: {fileID: -8310578835852675831, guid: bf4fe9ebe116a4ee283f2bfd76d19297, type: 3}
   playerTwoMarkerSprite: {fileID: -4563798465293866004, guid: d58737661ad034733a05e3c1dc1861bf, type: 3}
-  statusText: {fileID: 784794266773049361}
+  narrationText: {fileID: 784794266773049361}
   remainingTime: {fileID: 8649913303183434773}
   stopwatchImage: {fileID: 3230153324169906780}
-  automaticallyCompleteNarration: 1
   comicNarrationRequested:
     m_PersistentCalls:
       m_Calls: []
@@ -1488,7 +1675,7 @@ RectTransform:
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
   m_AnchorMin: {x: 0.5, y: 1}
   m_AnchorMax: {x: 0.5, y: 1}
-  m_AnchoredPosition: {x: 0, y: 20}
+  m_AnchoredPosition: {x: 16, y: -154}
   m_SizeDelta: {x: 48, y: 48}
   m_Pivot: {x: 0.5, y: 0}
 --- !u!222 &1548277769265204183

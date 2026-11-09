@@ -35,6 +35,7 @@ namespace Game.Multiplayer
         private Text playerCountText;
         private Text playerStatusText;
         private bool initialized;
+        private bool missingBackgroundReported;
 
         private void Awake()
         {
@@ -60,6 +61,7 @@ namespace Game.Multiplayer
             session.PlayersChanged += OnPlayersChanged;
             session.JoinCodeChanged += OnJoinCodeChanged;
             session.LobbyChanged += RefreshRoles;
+            Canvas.willRenderCanvases += RefreshVisibleLobbyBackground;
             if (voice != null) voice.Changed += OnVoiceChanged;
             RefreshAll();
         }
@@ -73,6 +75,7 @@ namespace Game.Multiplayer
             session.PlayersChanged -= OnPlayersChanged;
             session.JoinCodeChanged -= OnJoinCodeChanged;
             session.LobbyChanged -= RefreshRoles;
+            Canvas.willRenderCanvases -= RefreshVisibleLobbyBackground;
             if (voice != null) voice.Changed -= OnVoiceChanged;
         }
 
@@ -267,16 +270,40 @@ namespace Game.Multiplayer
 
         private void RefreshLobbyBackground()
         {
+            // Never write to the prefab reference or a stale Canvas instance.
+            if (lobbyPanel != null && (lobbyPanelImage == null || lobbyPanelImage.gameObject != lobbyPanel))
+                lobbyPanelImage = lobbyPanel.GetComponent<Image>();
             // Host/Client is a local network identity, unrelated to player count or gameplay role.
             // Reset to P1 outside a connected session so a former Client can create a new Host room.
             Sprite background = session.State == ConnectionState.Connected && !session.IsHost
                 ? playerTwoLobbyBackground : playerOneLobbyBackground;
-            if (lobbyPanelImage != null && background != null && lobbyPanelImage.sprite != background)
+            if (lobbyPanelImage == null || background == null)
+            {
+                if (!missingBackgroundReported)
+                    Debug.LogError("Lobby background reference is missing. Assign the LobbyPanel Image and both player sprites on LobbyUI.", this);
+                missingBackgroundReported = true;
+                return;
+            }
+            missingBackgroundReported = false;
+            if (lobbyPanelImage.sprite != background || lobbyPanelImage.overrideSprite != background)
+            {
+                // A transient Image override takes precedence over sprite in uGUI.
+                lobbyPanelImage.overrideSprite = null;
                 lobbyPanelImage.sprite = background;
+            }
+        }
+
+        private void RefreshVisibleLobbyBackground()
+        {
+            // Also cover reactivation after gameplay, external panel activation and initialization order.
+            // The setter is only touched when the actual displayed sprite differs.
+            if (initialized && session != null && lobbyPanel != null && lobbyPanel.activeInHierarchy)
+                RefreshLobbyBackground();
         }
 
         private void OnPlayersChanged(IReadOnlyList<NetworkPlayerInfo> players)
         {
+            RefreshLobbyBackground();
             //playerCountText.text = $"Players: {players.Count} / {NetworkSessionManager.MaximumPlayers}";
             playerCountText.text = $"{players.Count} / {NetworkSessionManager.MaximumPlayers}";
             StringBuilder status = new();

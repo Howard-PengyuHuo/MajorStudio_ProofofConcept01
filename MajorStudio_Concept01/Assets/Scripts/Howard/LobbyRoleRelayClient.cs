@@ -37,6 +37,7 @@ namespace Game.Multiplayer
                 await Until(() => session.State == ConnectionState.Connected && session.RoleSelection != null &&
                     session.RoleSelection.Current.Client.Connected, "Client joined with role data");
                 var roles = session.RoleSelection;
+                CheckLobbyBackground(session);
                 Require(roles.Current.Host.Role == LobbyRole.Unassigned && roles.Current.Client.Role == LobbyRole.Unassigned, "Lobby has network slots only");
                 File.WriteAllText(report, "joined");
                 await Until(() => roles.Current.Stage == SessionStage.CharacterSelection, "Three comics completed");
@@ -91,6 +92,7 @@ namespace Game.Multiplayer
                 await Until(() => bridge == null && !session.IsInGame && !roles.Current.GameStarted, "Returned to Lobby");
                 Require(roles.Current.Client.Role == LobbyRole.Unassigned && roles.Current.Host.Role == LobbyRole.Unassigned &&
                     roles.Current.Stage == SessionStage.Lobby, "Roles reset for replay in Lobby");
+                CheckLobbyBackground(session);
                 File.WriteAllText(report, "lobby");
                 await Until(() => Read(command) == "disconnect", "Disconnect command");
                 session.LeaveRoom();
@@ -102,6 +104,7 @@ namespace Game.Multiplayer
                 await Until(() => session.State == ConnectionState.Connected && session.RoleSelection != null &&
                     session.RoleSelection.Current.Client.Connected, "Client rejoined Relay");
                 roles = session.RoleSelection;
+                CheckLobbyBackground(session);
                 Require(roles.Current.Host.Role == LobbyRole.Unassigned && roles.Current.Client.Role == LobbyRole.Unassigned,
                     "Rejoin supplies unassigned network slot");
                 File.WriteAllText(report, "rejoined");
@@ -115,6 +118,20 @@ namespace Game.Multiplayer
                 Debug.LogError(error);
             }
             finally { Application.Quit(); }
+        }
+
+        private static void CheckLobbyBackground(NetworkSessionManager session)
+        {
+            var ui = session.GetComponent<LobbyUI>();
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var image = (Image)typeof(LobbyUI).GetField("lobbyPanelImage", flags).GetValue(ui);
+            var sprite = (Sprite)typeof(LobbyUI).GetField("playerTwoLobbyBackground", flags).GetValue(ui);
+            Require(!session.IsHost && session.State == ConnectionState.Connected && session.Players.Count == 2,
+                "Relay Client connected with two players");
+            Require(sprite != null && sprite.name == "Lobby Main Interface_Player2_0" && image.sprite == sprite &&
+                image.overrideSprite == sprite && image.gameObject.activeInHierarchy && image.gameObject.scene.IsValid(),
+                $"Client passport mismatch: sprite={image.sprite?.name}, visible={image.overrideSprite?.name}, expected={sprite?.name}");
+            Debug.Log("CLIENT LOBBY BACKGROUND VERIFIED: " + image.overrideSprite.name);
         }
 
         private static GameObject Panel(PreparationPreview preview, string field) =>
@@ -132,7 +149,7 @@ namespace Game.Multiplayer
         }
         private static async Task Until(Func<bool> condition, string message)
         {
-            DateTime deadline = DateTime.UtcNow.AddSeconds(60);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(120);
             while (!condition())
             {
                 if (DateTime.UtcNow > deadline) throw new TimeoutException(message);

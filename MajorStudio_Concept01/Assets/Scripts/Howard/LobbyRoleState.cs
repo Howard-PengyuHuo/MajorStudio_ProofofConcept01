@@ -5,7 +5,7 @@ using Unity.Netcode;
 namespace Game.Multiplayer
 {
     public enum LobbyRole : byte { Unassigned, Traveler, Hacker }
-    public enum SessionStage : byte { Lobby, ComicEntering, ComicNarration, ComicHold, CharacterSelection, Gameplay }
+    public enum SessionStage : byte { Lobby, ComicEntering, ComicNarration, ComicHold, CharacterSelection, Gameplay, SelectionEntering }
 
     public struct LobbyPlayerSelection : INetworkSerializable, IEquatable<LobbyPlayerSelection>
     {
@@ -33,6 +33,7 @@ namespace Game.Multiplayer
         public bool GameStarted;
         public SessionStage Stage;
         public int ComicIndex;
+        public int NarrationSegmentIndex;
         public uint ComicSequence, CountdownGeneration;
         public double StageStartedAt, StageEndsAt, CountdownEndsAt;
         public bool CountdownActive;
@@ -71,6 +72,7 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref GameStarted);
             serializer.SerializeValue(ref Stage);
             serializer.SerializeValue(ref ComicIndex);
+            serializer.SerializeValue(ref NarrationSegmentIndex);
             serializer.SerializeValue(ref ComicSequence);
             serializer.SerializeValue(ref CountdownGeneration);
             serializer.SerializeValue(ref StageStartedAt);
@@ -81,6 +83,7 @@ namespace Game.Multiplayer
 
         public bool Equals(LobbyRoleState other) => Host.Equals(other.Host) && Client.Equals(other.Client) &&
             GameStarted == other.GameStarted && Stage == other.Stage && ComicIndex == other.ComicIndex &&
+            NarrationSegmentIndex == other.NarrationSegmentIndex &&
             ComicSequence == other.ComicSequence && CountdownGeneration == other.CountdownGeneration &&
             StageStartedAt.Equals(other.StageStartedAt) && StageEndsAt.Equals(other.StageEndsAt) &&
             CountdownEndsAt.Equals(other.CountdownEndsAt) && CountdownActive == other.CountdownActive;

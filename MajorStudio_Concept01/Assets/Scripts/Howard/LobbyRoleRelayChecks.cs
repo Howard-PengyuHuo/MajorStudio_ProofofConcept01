@@ -120,7 +120,7 @@ namespace Game.Multiplayer.Editor
         }
         private static async Task Until(Func<bool> condition, string label)
         {
-            double deadline = EditorApplication.timeSinceStartup + 60;
+            double deadline = EditorApplication.timeSinceStartup + 120;
             while (!condition())
             {
                 if (!EditorApplication.isPlaying || EditorApplication.timeSinceStartup > deadline) throw new TimeoutException(label);

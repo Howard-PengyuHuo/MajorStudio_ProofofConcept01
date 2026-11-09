@@ -50,7 +50,8 @@ namespace Game.Multiplayer
         public IReadOnlyList<NetworkPlayerInfo> Players => players;
         public bool IsInGame { get; private set; }
         public bool IsInCutscene => RoleSelection != null && RoleSelection.Current.Stage is
-            SessionStage.ComicEntering or SessionStage.ComicNarration or SessionStage.ComicHold or SessionStage.CharacterSelection;
+            SessionStage.ComicEntering or SessionStage.ComicNarration or SessionStage.ComicHold or
+            SessionStage.SelectionEntering or SessionStage.CharacterSelection;
         public LobbyRoleSelection RoleSelection { get; private set; }
         public bool CanStartGame => IsHost && State == ConnectionState.Connected && !IsInGame &&
             RoleSelection != null && RoleSelection.CanStartGame;
