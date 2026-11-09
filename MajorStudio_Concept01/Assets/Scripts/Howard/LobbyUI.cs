@@ -303,7 +303,8 @@ namespace Game.Multiplayer
 
         private void OnPlayersChanged(IReadOnlyList<NetworkPlayerInfo> players)
         {
-            playerCountText.text = $"Players: {players.Count} / {NetworkSessionManager.MaximumPlayers}";
+            //playerCountText.text = $"Players: {players.Count} / {NetworkSessionManager.MaximumPlayers}";
+            playerCountText.text = $"{players.Count} / {NetworkSessionManager.MaximumPlayers}";
             StringBuilder status = new();
             for (int index = 0; index < NetworkSessionManager.MaximumPlayers; index++)
             {
@@ -311,11 +312,13 @@ namespace Game.Multiplayer
                 {
                     NetworkPlayerInfo player = players[index];
                     string role = player.IsHost ? "Host" : "Client";
-                    status.AppendLine($"Player {index + 1}: Connected  (Client ID {player.ClientId}, {role})");
+                    //status.AppendLine($"Player {index + 1}: Connected  (Client ID {player.ClientId}, {role})");
+                    status.AppendLine($" Connected  (Client ID {player.ClientId}, {role})");
                 }
                 else
                 {
-                    status.AppendLine($"Player {index + 1}: Waiting...");
+                    //status.AppendLine($"Player {index + 1}: Waiting...");
+                    status.AppendLine($" Waiting...");
                 }
             }
 
@@ -334,7 +337,7 @@ namespace Game.Multiplayer
 
         private void OnJoinCodeChanged(string code)
         {
-            joinCodeText.text = string.IsNullOrEmpty(code) ? "Join Code: unavailable" : $"Join Code: {code}";
+            joinCodeText.text = string.IsNullOrEmpty(code) ? "Join Code: unavailable" : $"{code}";
             copyButton.gameObject.SetActive(session.IsHost && !string.IsNullOrEmpty(code));
         }
 
