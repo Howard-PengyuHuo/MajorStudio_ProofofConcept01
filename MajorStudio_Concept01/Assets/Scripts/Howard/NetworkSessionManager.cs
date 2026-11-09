@@ -49,6 +49,8 @@ namespace Game.Multiplayer
             : 0;
         public IReadOnlyList<NetworkPlayerInfo> Players => players;
         public bool IsInGame { get; private set; }
+        public bool IsInCutscene => RoleSelection != null && RoleSelection.Current.Stage is
+            SessionStage.ComicEntering or SessionStage.ComicNarration or SessionStage.ComicHold or SessionStage.CharacterSelection;
         public LobbyRoleSelection RoleSelection { get; private set; }
         public bool CanStartGame => IsHost && State == ConnectionState.Connected && !IsInGame &&
             RoleSelection != null && RoleSelection.CanStartGame;
@@ -102,7 +104,13 @@ namespace Game.Multiplayer
 
         public void StartGame()
         {
-            if (!CanStartGame || !RoleSelection.TryLockForStart()) return;
+            if (!CanStartGame || !RoleSelection.BeginCutscene()) return;
+            SetState(ConnectionState.Connected, "Playing introduction...");
+        }
+
+        internal void LoadSelectedGameplay(uint generation)
+        {
+            if (!IsHost || IsInGame || RoleSelection == null || !RoleSelection.TryLockForStart(generation)) return;
             IsInGame = true;
             var result = networkManager.SceneManager.LoadScene(GameplaySceneName, LoadSceneMode.Additive);
             if (result != SceneEventProgressStatus.Started)
@@ -354,7 +362,7 @@ namespace Game.Multiplayer
         {
             bool isLocalHost = request.ClientNetworkId == NetworkManager.ServerClientId;
             bool roomHasSpace = networkManager.ConnectedClientsIds.Count < MaximumPlayers;
-            response.Approved = isLocalHost || (roomHasSpace && !IsInGame);
+            response.Approved = isLocalHost || (roomHasSpace && !IsInGame && !IsInCutscene);
             response.CreatePlayerObject = false;
             response.Pending = false;
             response.Reason = response.Approved ? string.Empty : IsInGame ? "Game already in progress" : "Room Full";

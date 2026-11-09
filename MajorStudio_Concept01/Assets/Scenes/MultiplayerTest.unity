@@ -576,6 +576,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Game.Multiplayer.LobbyUI
   multiplayerCanvasPrefab: {fileID: 6746314474815652869, guid: bd205babbcb8d46f7bd6d82037bcabb0, type: 3}
+  lobbyPanelImage: {fileID: 4830329081280618800, guid: bd205babbcb8d46f7bd6d82037bcabb0, type: 3}
+  playerOneLobbyBackground: {fileID: -7808337277092980367, guid: 8e04b88f8485c4a0aaa08744359ea643, type: 3}
+  playerTwoLobbyBackground: {fileID: 6908513333441666389, guid: a02e9f7060194476da2357cecc92834c, type: 3}
 --- !u!114 &1512685248
 MonoBehaviour:
   m_ObjectHideFlags: 0
