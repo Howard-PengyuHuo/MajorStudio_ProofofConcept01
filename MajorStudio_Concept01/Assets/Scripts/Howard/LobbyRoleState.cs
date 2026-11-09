@@ -5,12 +5,13 @@ using Unity.Netcode;
 namespace Game.Multiplayer
 {
     public enum LobbyRole : byte { Unassigned, Traveler, Hacker }
+    public enum SessionStage : byte { Lobby, ComicEntering, ComicNarration, ComicHold, CharacterSelection, Gameplay, SelectionEntering }
 
     public struct LobbyPlayerSelection : INetworkSerializable, IEquatable<LobbyPlayerSelection>
     {
         public ulong ClientId;
         public uint Version;
-        public bool Connected, Ready;
+        public bool Connected;
         public LobbyRole Role;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -18,21 +19,26 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref ClientId);
             serializer.SerializeValue(ref Version);
             serializer.SerializeValue(ref Connected);
-            serializer.SerializeValue(ref Ready);
             serializer.SerializeValue(ref Role);
         }
 
         public bool Equals(LobbyPlayerSelection other) => ClientId == other.ClientId && Version == other.Version &&
-            Connected == other.Connected && Ready == other.Ready && Role == other.Role;
+            Connected == other.Connected && Role == other.Role;
     }
 
-    // A single server-written value keeps role occupancy, readiness and the start lock atomic.
+    // One server-written value keeps assignments, comic phase and countdown generation atomic.
     public struct LobbyRoleState : INetworkSerializable, IEquatable<LobbyRoleState>
     {
         public LobbyPlayerSelection Host, Client;
         public bool GameStarted;
+        public SessionStage Stage;
+        public int ComicIndex;
+        public int NarrationSegmentIndex;
+        public uint ComicSequence, CountdownGeneration;
+        public double StageStartedAt, StageEndsAt, CountdownEndsAt;
+        public bool CountdownActive;
 
-        public bool BothReady => Host.Connected && Client.Connected && Host.Ready && Client.Ready &&
+        public bool HasDistinctRoles => Host.Connected && Client.Connected &&
             ((Host.Role == LobbyRole.Traveler && Client.Role == LobbyRole.Hacker) ||
              (Host.Role == LobbyRole.Hacker && Client.Role == LobbyRole.Traveler));
 
@@ -64,9 +70,22 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref Host);
             serializer.SerializeValue(ref Client);
             serializer.SerializeValue(ref GameStarted);
+            serializer.SerializeValue(ref Stage);
+            serializer.SerializeValue(ref ComicIndex);
+            serializer.SerializeValue(ref NarrationSegmentIndex);
+            serializer.SerializeValue(ref ComicSequence);
+            serializer.SerializeValue(ref CountdownGeneration);
+            serializer.SerializeValue(ref StageStartedAt);
+            serializer.SerializeValue(ref StageEndsAt);
+            serializer.SerializeValue(ref CountdownEndsAt);
+            serializer.SerializeValue(ref CountdownActive);
         }
 
         public bool Equals(LobbyRoleState other) => Host.Equals(other.Host) && Client.Equals(other.Client) &&
-            GameStarted == other.GameStarted;
+            GameStarted == other.GameStarted && Stage == other.Stage && ComicIndex == other.ComicIndex &&
+            NarrationSegmentIndex == other.NarrationSegmentIndex &&
+            ComicSequence == other.ComicSequence && CountdownGeneration == other.CountdownGeneration &&
+            StageStartedAt.Equals(other.StageStartedAt) && StageEndsAt.Equals(other.StageEndsAt) &&
+            CountdownEndsAt.Equals(other.CountdownEndsAt) && CountdownActive == other.CountdownActive;
     }
 }

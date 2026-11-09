@@ -17,9 +17,11 @@ namespace Game.Multiplayer.Editor
     public static class LobbyRoleRelayChecks
     {
         private static bool running;
+        [MenuItem("Tools/Multiplayer Cutscene/Build Check Player (macOS)")]
         [MenuItem("Tools/Role Selection/Build Check Player (macOS)")]
         public static void Build() => CoopGameRelayChecks.Build();
 
+        [MenuItem("Tools/Multiplayer Cutscene/Run Relay Scene Checks (Play Mode)")]
         [MenuItem("Tools/Role Selection/Run Relay Scene Checks (Play Mode)")]
         public static async void Run()
         {
@@ -48,55 +50,53 @@ namespace Game.Multiplayer.Editor
                     Arguments = $"-batchmode -nographics -logFile \"{folder}/role-client.log\" --role-check-code={session.JoinCode} " +
                         $"--role-check-report=\"{report}\" --role-check-command=\"{command}\""
                 });
-                await Until(() => ReadReport(report) == "default", "Client joined Relay with default roles");
+                await Until(() => ReadReport(report) == "joined", "Client joined Relay with unassigned slots");
                 var roles = session.RoleSelection;
-                roles.SetReady(true);
-                await Until(() => !roles.HasPendingRequest, "Host Ready confirmed");
-                if (session.CanStartGame) throw new InvalidOperationException("One Ready player enabled Start");
-                session.StartGame();
-                if (session.IsInGame) throw new InvalidOperationException("Started with one Ready player");
-                roles.SetReady(false);
-                await Until(() => !roles.HasPendingRequest, "Cancel Ready confirmed");
-                roles.ReleaseRole();
-                await Until(() => !roles.HasPendingRequest, "Host released Traveler");
-                File.WriteAllText(command, "release-client");
-                await Until(() => ReadReport(report) == "released", "Client released Hacker");
-                roles.SelectRole(LobbyRole.Hacker);
-                await Until(() => !roles.HasPendingRequest, "Host selected Hacker");
-                File.WriteAllText(command, "select-traveler");
-                await Until(() => ReadReport(report) == "swapped", "Client selected Traveler");
-                roles.SetReady(true);
-                await Until(() => !roles.HasPendingRequest, "Host readied chosen role");
-                File.WriteAllText(command, "ready");
-                await Until(() => ReadReport(report) == "ready" && session.CanStartGame, "Both Ready enables Start");
                 var button = GameObject.Find("StartGameButton").GetComponent<Button>();
-                if (!button.interactable) throw new InvalidOperationException("Start button did not update after Ready confirmation");
+                if (!button.interactable || !session.CanStartGame) throw new InvalidOperationException("Two connections did not enable Start");
+                ScreenCapture.CaptureScreenshot(Path.Combine(folder, "lobby.png"));
+                await Task.Delay(250);
                 button.onClick.Invoke();
                 button.onClick.Invoke();
+                await Until(() => ReadReport(report) == "selection" && roles.Current.Stage == SessionStage.CharacterSelection,
+                    "Both peers completed the three default-duration comics");
+                var view = roles.GetComponentInChildren<CutsceneCarousel>();
+                view.transform.Find("Content/CharacterSelection/BriefcaseButton").GetComponent<Button>().onClick.Invoke();
+                await Until(() => roles.Current.Host.Role == LobbyRole.Hacker, "Host clicked Briefcase");
+                File.WriteAllText(command, "select-traveler");
+                await Until(() => ReadReport(report) == "countdown" && roles.Current.CountdownActive, "Automatic countdown active on both peers");
+                uint canceledGeneration = roles.Current.CountdownGeneration;
+                double canceledDeadline = roles.Current.CountdownEndsAt;
+                ScreenCapture.CaptureScreenshot(Path.Combine(folder, "character-selection.png"));
+                await Task.Delay(300);
+                File.WriteAllText(command, "deselect");
+                await Until(() => ReadReport(report) == "canceled" && !roles.Current.CountdownActive, "Client deselection canceled both stopwatches");
+                await Until(() => roles.ServerNow > canceledDeadline + 0.2, "Old countdown deadline passed");
+                if (session.IsInGame || roles.Current.GameStarted || roles.TryLockForStart(canceledGeneration))
+                    throw new InvalidOperationException("Canceled timer started gameplay");
+                File.WriteAllText(command, "reselect");
                 await Until(() => ReadReport(report) == "game", "Client loaded GameScene and selected Traveler UI");
                 var bridge = UnityEngine.Object.FindAnyObjectByType<CoopGameNetworkBridge>();
-                if (bridge == null || bridge.LocalRole != PlayerRole.Hacker || bridge.GameplaySynchronizationEnabled)
-                    throw new InvalidOperationException("Host did not enter role-only Hacker presentation");
+                if (bridge == null || bridge.LocalRole != PlayerRole.Hacker)
+                    throw new InvalidOperationException("Host did not enter selected Hacker presentation");
                 var preview = bridge.GetComponentInChildren<PreparationPreview>(true);
                 var hacker = (GameObject)typeof(PreparationPreview).GetField("hacker", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(preview);
                 if (!hacker.activeInHierarchy || bridge.GetComponentsInChildren<Canvas>(true).Length != 1)
                     throw new InvalidOperationException("Host Hacker panel or Canvas count incorrect");
                 session.ReturnToLobby();
-                await Until(() => ReadReport(report) == "lobby", "Both returned to Lobby with preserved roles");
-                if (session.CanStartGame) throw new InvalidOperationException("Return to Lobby did not reset Ready");
+                await Until(() => ReadReport(report) == "lobby", "Both returned to Lobby with unassigned roles");
+                if (!session.CanStartGame) throw new InvalidOperationException("Two connected players cannot restart introduction");
                 File.WriteAllText(command, "disconnect");
                 await Until(() => ReadReport(report) == "disconnected" && !roles.Current.Client.Connected,
                     "Client disconnect released role");
-                if (roles.Current.Host.Ready) throw new InvalidOperationException("Remaining player stayed Ready");
-                roles.SetReady(true);
-                await Until(() => !roles.HasPendingRequest, "Remaining Host Ready confirmed");
                 File.WriteAllText(command, "rejoin");
-                await Until(() => ReadReport(report) == "rejoined", "Client rejoined with free role and Ready reset");
+                await Until(() => ReadReport(report) == "rejoined", "Client rejoined with unassigned slot");
                 session.LeaveRoom();
                 await Until(() => ReadReport(report) == "passed", "Client received Host disconnect");
-                Debug.Log("ROLE RELAY SCENE CHECKS PASSED: separate Editor/standalone peers; Relay create/join, initial and swapped roles, " +
-                    "Ready/Cancel Ready and Start gating, duplicate Start protection, synchronized GameScene with Host Hacker/Client Traveler, " +
-                    "Waiting-only gameplay, return to Lobby, disconnect/rejoin role cleanup, and no duplicate runtime objects. Client log: " + folder + "/role-client.log");
+                Debug.Log("CUTSCENE RELAY SCENE CHECKS PASSED: separate Editor/standalone peers; Relay create/join, two-player Start, " +
+                    "three comics with default holds, button-based selection/deselection, countdown cancellation past its original deadline, " +
+                    "fresh automatic countdown, synchronized GameScene with Host Hacker/Client Traveler, return to Lobby, disconnect/rejoin, " +
+                    "Host shutdown and no duplicate gameplay objects. Evidence folder: " + folder);
             }
             catch (Exception error) { Debug.LogError("ROLE RELAY SCENE CHECKS FAILED: " + error); }
             finally
@@ -120,7 +120,7 @@ namespace Game.Multiplayer.Editor
         }
         private static async Task Until(Func<bool> condition, string label)
         {
-            double deadline = EditorApplication.timeSinceStartup + 60;
+            double deadline = EditorApplication.timeSinceStartup + 120;
             while (!condition())
             {
                 if (!EditorApplication.isPlaying || EditorApplication.timeSinceStartup > deadline) throw new TimeoutException(label);

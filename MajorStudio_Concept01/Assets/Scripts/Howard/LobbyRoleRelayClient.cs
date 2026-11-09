@@ -9,6 +9,7 @@ using Unity.Services.Authentication;
 using Unity.Services.Core;
 using UnityEngine;
 using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace Game.Multiplayer
 {
@@ -36,41 +37,51 @@ namespace Game.Multiplayer
                 await Until(() => session.State == ConnectionState.Connected && session.RoleSelection != null &&
                     session.RoleSelection.Current.Client.Connected, "Client joined with role data");
                 var roles = session.RoleSelection;
-                Require(roles.Current.Host.Role == LobbyRole.Traveler && roles.Current.Client.Role == LobbyRole.Hacker, "Initial Host/Client roles");
-                File.WriteAllText(report, "default");
-                await Until(() => Read(command) == "release-client", "Release command");
-                roles.ReleaseRole();
-                await Until(() => !roles.HasPendingRequest && roles.Current.Client.Role == LobbyRole.Unassigned, "Client released role");
-                File.WriteAllText(report, "released");
-                await Until(() => Read(command) == "select-traveler", "Swap command");
-                roles.SelectRole(LobbyRole.Traveler);
+                CheckLobbyBackground(session);
+                Require(roles.Current.Host.Role == LobbyRole.Unassigned && roles.Current.Client.Role == LobbyRole.Unassigned, "Lobby has network slots only");
+                File.WriteAllText(report, "joined");
+                await Until(() => roles.Current.Stage == SessionStage.CharacterSelection, "Three comics completed");
+                var view = roles.GetComponentInChildren<CutsceneCarousel>();
+                Require(!session.IsInGame && !roles.Current.CountdownActive, "No premature gameplay or countdown");
+                File.WriteAllText(report, "selection");
+                await Until(() => Read(command) == "select-traveler", "Selection command");
+                var personButton = view.transform.Find("Content/CharacterSelection/PersonButton").GetComponent<Button>();
+                personButton.onClick.Invoke();
                 await Until(() => !roles.HasPendingRequest && roles.Current.Client.Role == LobbyRole.Traveler, "Client selected Traveler");
                 Require(roles.Current.Host.Role == LobbyRole.Hacker, "Host now owns Hacker");
-                File.WriteAllText(report, "swapped");
-                await Until(() => Read(command) == "ready", "Ready command");
-                roles.SetReady(true);
-                await Until(() => !roles.HasPendingRequest && roles.Current.BothReady, "Both Ready");
+                await Until(() => roles.Current.CountdownActive, "Automatic countdown started");
+                var stopwatch = view.transform.Find("Content/CharacterSelection/StopwatchImage").gameObject;
+                Require(stopwatch.activeInHierarchy, "Client stopwatch visible");
+                var marker = personButton.transform.Find("PersonMarker").GetComponent<Image>();
+                Require(marker.gameObject.activeInHierarchy && marker.sprite != null && marker.sprite.name == "P2_0",
+                    "Client displays the P2 marker image on Person");
                 Require(!session.CanStartGame, "Client cannot Start");
                 session.StartGame();
                 Require(!session.IsInGame, "Client Start request rejected");
-                File.WriteAllText(report, "ready");
+                File.WriteAllText(report, "countdown");
+                uint generation = roles.Current.CountdownGeneration;
+                await Until(() => Read(command) == "deselect", "Deselect command");
+                personButton.onClick.Invoke();
+                await Until(() => !roles.HasPendingRequest && !roles.Current.CountdownActive &&
+                    roles.Current.Client.Role == LobbyRole.Unassigned, "Deselect accepted");
+                Require(!stopwatch.activeInHierarchy, "Canceled stopwatch hidden");
+                File.WriteAllText(report, "canceled");
+                await Until(() => Read(command) == "reselect", "Fresh selection command");
+                personButton.onClick.Invoke();
+                await Until(() => roles.Current.CountdownActive, "Fresh countdown active");
+                Require(roles.Current.CountdownGeneration > generation &&
+                    roles.Current.CountdownEndsAt - roles.ServerNow > 8, "Fresh full-duration countdown received");
                 CoopGameNetworkBridge bridge = null;
                 await Until(() =>
                 {
                     bridge = FindAnyObjectByType<CoopGameNetworkBridge>();
                     return bridge != null && bridge.IsSpawned && bridge.GetComponentInChildren<Canvas>() != null;
                 }, "Client loaded synchronized GameScene");
-                Require(bridge.LocalRole == PlayerRole.Traveler && !bridge.GameplaySynchronizationEnabled, "Selected Traveler applied in role-only stage");
+                Require(bridge.LocalRole == PlayerRole.Traveler, "Selected Person mapped to Traveler");
                 var preview = bridge.GetComponentInChildren<PreparationPreview>(true);
                 Require(Panel(preview, "traveler").activeInHierarchy && !Panel(preview, "hacker").activeInHierarchy, "Only Traveler panel visible");
-                var prep = bridge.GetComponentInChildren<PreparationSession>(true);
-                prep.RequestStart();
-                prep.RequestIdentityEdit(IdentityField.Name, "ignored");
-                prep.AdvanceLocalTime(100);
-                bridge.StartNewRound();
-                await Task.Delay(200);
-                Require(!prep.LocalSimulation && prep.Phase == EntryPhase.Waiting && string.IsNullOrEmpty(prep.Identity.Name) &&
-                    bridge.CurrentState.Round == 0, "Gameplay remains non-interactive Waiting");
+                Require(!bridge.GetComponentInChildren<PreparationSession>(true).LocalSimulation,
+                    "Existing online gameplay retains network authority");
                 Require(bridge.GetComponentsInChildren<Canvas>(true).Length == 1 && FindObjectsByType<NetworkManager>().Length == 1 &&
                     FindObjectsByType<EventSystem>().Length == 1 && FindObjectsByType<LobbyRoleSelection>().Length == 1,
                     "No duplicate Canvas, NetworkManager, EventSystem or role NetworkObject");
@@ -79,8 +90,9 @@ namespace Game.Multiplayer
                 Require(roles.Current.Client.Role == LobbyRole.Traveler, "Role locked during game");
                 File.WriteAllText(report, "game");
                 await Until(() => bridge == null && !session.IsInGame && !roles.Current.GameStarted, "Returned to Lobby");
-                Require(roles.Current.Client.Role == LobbyRole.Traveler && roles.Current.Host.Role == LobbyRole.Hacker &&
-                    !roles.Current.Client.Ready && !roles.Current.Host.Ready, "Roles retained and Ready reset in Lobby");
+                Require(roles.Current.Client.Role == LobbyRole.Unassigned && roles.Current.Host.Role == LobbyRole.Unassigned &&
+                    roles.Current.Stage == SessionStage.Lobby, "Roles reset for replay in Lobby");
+                CheckLobbyBackground(session);
                 File.WriteAllText(report, "lobby");
                 await Until(() => Read(command) == "disconnect", "Disconnect command");
                 session.LeaveRoom();
@@ -92,8 +104,9 @@ namespace Game.Multiplayer
                 await Until(() => session.State == ConnectionState.Connected && session.RoleSelection != null &&
                     session.RoleSelection.Current.Client.Connected, "Client rejoined Relay");
                 roles = session.RoleSelection;
-                Require(roles.Current.Host.Role == LobbyRole.Hacker && roles.Current.Client.Role == LobbyRole.Traveler &&
-                    !roles.Current.Host.Ready && !roles.Current.Client.Ready, "Rejoin preserves unique roles and clears Ready");
+                CheckLobbyBackground(session);
+                Require(roles.Current.Host.Role == LobbyRole.Unassigned && roles.Current.Client.Role == LobbyRole.Unassigned,
+                    "Rejoin supplies unassigned network slot");
                 File.WriteAllText(report, "rejoined");
                 await Until(() => session.State != ConnectionState.Connected && session.RoleSelection == null, "Host disconnect notification and cleanup");
                 File.WriteAllText(report, "passed");
@@ -105,6 +118,20 @@ namespace Game.Multiplayer
                 Debug.LogError(error);
             }
             finally { Application.Quit(); }
+        }
+
+        private static void CheckLobbyBackground(NetworkSessionManager session)
+        {
+            var ui = session.GetComponent<LobbyUI>();
+            const BindingFlags flags = BindingFlags.NonPublic | BindingFlags.Instance;
+            var image = (Image)typeof(LobbyUI).GetField("lobbyPanelImage", flags).GetValue(ui);
+            var sprite = (Sprite)typeof(LobbyUI).GetField("playerTwoLobbyBackground", flags).GetValue(ui);
+            Require(!session.IsHost && session.State == ConnectionState.Connected && session.Players.Count == 2,
+                "Relay Client connected with two players");
+            Require(sprite != null && sprite.name == "Lobby Main Interface_Player2_0" && image.sprite == sprite &&
+                image.overrideSprite == sprite && image.gameObject.activeInHierarchy && image.gameObject.scene.IsValid(),
+                $"Client passport mismatch: sprite={image.sprite?.name}, visible={image.overrideSprite?.name}, expected={sprite?.name}");
+            Debug.Log("CLIENT LOBBY BACKGROUND VERIFIED: " + image.overrideSprite.name);
         }
 
         private static GameObject Panel(PreparationPreview preview, string field) =>
@@ -122,7 +149,7 @@ namespace Game.Multiplayer
         }
         private static async Task Until(Func<bool> condition, string message)
         {
-            DateTime deadline = DateTime.UtcNow.AddSeconds(60);
+            DateTime deadline = DateTime.UtcNow.AddSeconds(120);
             while (!condition())
             {
                 if (DateTime.UtcNow > deadline) throw new TimeoutException(message);
