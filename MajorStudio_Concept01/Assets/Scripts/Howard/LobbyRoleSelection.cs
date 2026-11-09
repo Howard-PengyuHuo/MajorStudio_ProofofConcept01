@@ -10,6 +10,9 @@ namespace Game.Multiplayer
     [DisallowMultipleComponent, RequireComponent(typeof(NetworkObject))]
     public sealed class LobbyRoleSelection : NetworkBehaviour
     {
+        [SerializeField] private CutsceneCarousel cutscenePrefab;
+        [SerializeField, Min(0.1f)] private float countdownDuration = 10;
+        private CutsceneCarousel presentation;
         private readonly NetworkVariable<LobbyRoleState> state = new(default,
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
         private readonly Dictionary<ulong, ulong> lastRequestIds = new();
@@ -20,8 +23,9 @@ namespace Game.Multiplayer
         public event Action Changed;
         public LobbyRoleState Current => state.Value;
         public bool HasPendingRequest => pendingRequestId != 0;
-        public string Feedback { get; private set; } = "Choose a role, then Ready. Release your role to swap.";
-        public bool CanStartGame => IsSpawned && !state.Value.GameStarted && state.Value.BothReady &&
+        public string Feedback { get; private set; } = "Select Person or Briefcase. Click your selection again to deselect.";
+        public double ServerNow => NetworkManager.ServerTime.Time;
+        public bool CanStartGame => IsSpawned && state.Value.Stage == SessionStage.Lobby &&
             NetworkManager.ConnectedClientsIds.Count == NetworkSessionManager.MaximumPlayers;
 
         public override void OnNetworkSpawn()
@@ -38,30 +42,34 @@ namespace Game.Multiplayer
                     Host = new LobbyPlayerSelection
                     {
                         ClientId = Unity.Netcode.NetworkManager.ServerClientId, Connected = true,
-                        Role = LobbyRole.Traveler, Version = 1
+                        Role = LobbyRole.Unassigned, Version = 1
                     }
                 };
                 foreach (ulong clientId in NetworkManager.ConnectedClientsIds)
                     if (clientId != initial.Host.ClientId)
-                        initial.Client = NewClient(clientId, initial.Host.Role);
+                        initial.Client = NewClient(clientId);
                 state.Value = initial;
             }
             session?.RegisterRoleSelection(this);
+            if (cutscenePrefab != null)
+            {
+                presentation = Instantiate(cutscenePrefab, transform, false);
+                presentation.Bind(this);
+            }
             Changed?.Invoke();
         }
 
-        private static LobbyPlayerSelection NewClient(ulong id, LobbyRole hostRole) => new()
+        private static LobbyPlayerSelection NewClient(ulong id) => new()
         {
             ClientId = id, Connected = true, Version = 1,
-            Role = hostRole == LobbyRole.Hacker ? LobbyRole.Traveler : LobbyRole.Hacker
+            Role = LobbyRole.Unassigned
         };
 
         private void OnClientConnected(ulong id)
         {
             if (!IsServer || id == state.Value.Host.ClientId || state.Value.TryGetPlayer(id, out _)) return;
             var current = state.Value;
-            current.Client = NewClient(id, current.Host.Role);
-            current.Host.Ready = false;
+            current.Client = NewClient(id);
             current.Host.Version++;
             state.Value = current;
         }
@@ -73,13 +81,20 @@ namespace Game.Multiplayer
             if (current.Client.Connected && id == current.Client.ClientId)
             {
                 current.Client = default;
-                current.Host.Ready = false;
                 current.Host.Version++;
             }
             else if (current.Host.Connected && id == current.Host.ClientId)
                 current = default;
             else return;
             lastRequestIds.Remove(id);
+            CancelCountdown(ref current);
+            // A pre-game departure returns the survivor to the custom Lobby. A new pair replays the comics.
+            if (!current.GameStarted)
+            {
+                current.Stage = SessionStage.Lobby;
+                current.ComicSequence++;
+                current.Host.Role = LobbyRole.Unassigned;
+            }
             state.Value = current;
         }
 
@@ -88,45 +103,40 @@ namespace Game.Multiplayer
 
         public bool TryGetRole(ulong id, out PlayerRole role) => state.Value.TryGetRole(id, out role);
 
-        public void SelectRole(LobbyRole role) => Submit(false, role, false);
+        public void SelectRole(LobbyRole role) => Submit(role);
         public void ReleaseRole() => SelectRole(LobbyRole.Unassigned);
-        public void SetReady(bool ready) => Submit(true, default, ready);
-        public void ToggleReady()
-        {
-            if (TryGetLocalPlayer(out var player)) SetReady(!player.Ready);
-        }
 
-        private void Submit(bool readyRequest, LobbyRole role, bool ready)
+        private void Submit(LobbyRole role)
         {
             if (!IsSpawned || HasPendingRequest || !TryGetLocalPlayer(out var player)) return;
             pendingRequestId = ++nextRequestId;
             pendingSince = Time.unscaledTime;
             Feedback = "Waiting for Host confirmation...";
             Changed?.Invoke();
-            SelectRoleRpc(pendingRequestId, player.Version, readyRequest, role, ready);
+            SelectRoleRpc(pendingRequestId, player.Version, role);
         }
 
         [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
-        private void SelectRoleRpc(ulong requestId, uint expectedVersion, bool readyRequest,
-            LobbyRole role, bool ready, RpcParams rpcParams = default)
+        private void SelectRoleRpc(ulong requestId, uint expectedVersion, LobbyRole role, RpcParams rpcParams = default)
         {
             ulong sender = rpcParams.Receive.SenderClientId;
-            string error = Validate(sender, requestId, expectedVersion, readyRequest, role, ready);
+            string error = Validate(sender, requestId, expectedVersion, role);
             if (string.IsNullOrEmpty(error))
             {
                 var current = state.Value;
                 current.TryGetPlayer(sender, out var player);
-                if (readyRequest) player.Ready = ready;
-                else { player.Role = role; player.Ready = false; }
+                bool changed = player.Role != role;
+                player.Role = role;
                 player.Version++;
                 if (sender == current.Host.ClientId) current.Host = player;
                 else current.Client = player;
+                if (changed) CancelCountdown(ref current);
                 state.Value = current;
             }
             SelectionResultRpc(sender, requestId, new FixedString128Bytes(error ?? string.Empty));
         }
 
-        private string Validate(ulong sender, ulong requestId, uint version, bool readyRequest, LobbyRole role, bool ready)
+        private string Validate(ulong sender, ulong requestId, uint version, LobbyRole role)
         {
             if (!IsServer || !NetworkManager.ConnectedClients.ContainsKey(sender) ||
                 !state.Value.TryGetPlayer(sender, out var player)) return "Player is not in this Lobby.";
@@ -134,10 +144,8 @@ namespace Game.Multiplayer
                 return "This request has already been processed.";
             lastRequestIds[sender] = requestId;
             if (state.Value.GameStarted || (session != null && session.IsInGame)) return "Roles are locked during the game.";
+            if (state.Value.Stage != SessionStage.CharacterSelection) return "Character selection is not open yet.";
             if (version != player.Version) return "Selection changed. Please try again.";
-            if (readyRequest)
-                return ready && player.Role == LobbyRole.Unassigned ? "Select a role before becoming Ready." : string.Empty;
-            if (player.Ready) return "Cancel Ready before changing or releasing your role.";
             if (!Enum.IsDefined(typeof(LobbyRole), role)) return "Invalid role.";
             if (state.Value.IsOccupied(role, sender)) return "That role is occupied. Its player must release it first.";
             return string.Empty;
@@ -152,11 +160,60 @@ namespace Game.Multiplayer
             Changed?.Invoke();
         }
 
-        internal bool TryLockForStart()
+        internal bool BeginCutscene()
         {
-            if (!IsServer || !CanStartGame) return false;
+            if (!IsServer || !CanStartGame || presentation == null || presentation.PanelCount == 0) return false;
+            var current = state.Value;
+            current.Host.Role = current.Client.Role = LobbyRole.Unassigned;
+            current.Host.Version++;
+            current.Client.Version++;
+            CancelCountdown(ref current);
+            EnterComic(ref current, 0);
+            state.Value = current;
+            return true;
+        }
+
+        private void EnterComic(ref LobbyRoleState current, int index)
+        {
+            current.Stage = SessionStage.ComicEntering;
+            current.ComicIndex = index;
+            current.NarrationSegmentIndex = -1;
+            current.ComicSequence++;
+            current.StageStartedAt = ServerNow;
+            current.StageEndsAt = ServerNow + presentation.TransitionDuration;
+        }
+
+        public void NotifyNarrationCompleted(int comicIndex, uint sequence)
+        {
+            // No client completion RPC: only the Host's final segment deadline can finish narration.
+            if (!IsSpawned || !IsServer || presentation == null) return;
+            var current = state.Value;
+            if (current.Stage != SessionStage.ComicNarration || current.ComicIndex != comicIndex ||
+                current.ComicSequence != sequence || ServerNow < current.StageEndsAt ||
+                current.NarrationSegmentIndex + 1 < presentation.SegmentCount(comicIndex)) return;
+            current.Stage = SessionStage.ComicHold;
+            current.StageStartedAt = ServerNow;
+            current.StageEndsAt = ServerNow + presentation.HoldDuration(comicIndex);
+            state.Value = current;
+        }
+
+        private static void CancelCountdown(ref LobbyRoleState current)
+        {
+            current.CountdownActive = false;
+            current.CountdownEndsAt = 0;
+            current.CountdownGeneration++;
+        }
+
+        internal bool TryLockForStart(uint generation)
+        {
+            if (!IsServer || state.Value.GameStarted || state.Value.Stage != SessionStage.CharacterSelection ||
+                !state.Value.CountdownActive || state.Value.CountdownGeneration != generation ||
+                ServerNow < state.Value.CountdownEndsAt || !state.Value.HasDistinctRoles ||
+                NetworkManager.ConnectedClientsIds.Count != NetworkSessionManager.MaximumPlayers) return false;
             var current = state.Value;
             current.GameStarted = true;
+            current.Stage = SessionStage.Gameplay;
+            CancelCountdown(ref current);
             state.Value = current;
             return true;
         }
@@ -166,6 +223,8 @@ namespace Game.Multiplayer
             if (!IsServer) return;
             var current = state.Value;
             current.GameStarted = false;
+            current.Stage = SessionStage.CharacterSelection;
+            CancelCountdown(ref current);
             state.Value = current;
         }
 
@@ -174,8 +233,10 @@ namespace Game.Multiplayer
             if (!IsServer) return;
             var current = state.Value;
             current.GameStarted = false;
-            current.Host.Ready = false;
-            current.Client.Ready = false;
+            current.Stage = SessionStage.Lobby;
+            current.ComicSequence++;
+            current.Host.Role = current.Client.Role = LobbyRole.Unassigned;
+            CancelCountdown(ref current);
             current.Host.Version++;
             current.Client.Version++;
             state.Value = current;
@@ -185,10 +246,64 @@ namespace Game.Multiplayer
 
         private void Update()
         {
+            if (IsSpawned && IsServer) AdvanceSequence();
             if (!HasPendingRequest || Time.unscaledTime - pendingSince < 10) return;
             pendingRequestId = 0;
             Feedback = "Request timed out. Please try again.";
             Changed?.Invoke();
+        }
+
+        private void AdvanceSequence()
+        {
+            var current = state.Value;
+            if (NetworkManager.ConnectedClientsIds.Count != NetworkSessionManager.MaximumPlayers) return;
+            if (current.Stage == SessionStage.ComicEntering && ServerNow >= current.StageEndsAt)
+            {
+                current.Stage = SessionStage.ComicNarration;
+                current.NarrationSegmentIndex = 0;
+                current.StageStartedAt = ServerNow;
+                current.StageEndsAt = ServerNow + presentation.SegmentDuration(current.ComicIndex, 0);
+                state.Value = current;
+            }
+            else if (current.Stage == SessionStage.ComicNarration && ServerNow >= current.StageEndsAt)
+            {
+                if (current.NarrationSegmentIndex + 1 < presentation.SegmentCount(current.ComicIndex))
+                {
+                    current.NarrationSegmentIndex++;
+                    current.StageStartedAt = ServerNow;
+                    current.StageEndsAt = ServerNow + presentation.SegmentDuration(current.ComicIndex, current.NarrationSegmentIndex);
+                    state.Value = current;
+                }
+                else NotifyNarrationCompleted(current.ComicIndex, current.ComicSequence);
+            }
+            else if (current.Stage == SessionStage.ComicHold && ServerNow >= current.StageEndsAt)
+            {
+                if (current.ComicIndex + 1 < presentation.PanelCount) EnterComic(ref current, current.ComicIndex + 1);
+                else
+                {
+                    current.Stage = SessionStage.SelectionEntering;
+                    current.StageStartedAt = ServerNow;
+                    current.StageEndsAt = ServerNow + presentation.SelectionScaleDuration;
+                }
+                state.Value = current;
+            }
+            else if (current.Stage == SessionStage.SelectionEntering && ServerNow >= current.StageEndsAt)
+            {
+                current.Stage = SessionStage.CharacterSelection;
+                state.Value = current;
+            }
+            else if (current.Stage == SessionStage.CharacterSelection && current.HasDistinctRoles)
+            {
+                if (!current.CountdownActive)
+                {
+                    current.CountdownGeneration++;
+                    current.CountdownActive = true;
+                    current.CountdownEndsAt = ServerNow + Mathf.Max(0.1f, countdownDuration);
+                    state.Value = current;
+                }
+                else if (ServerNow >= current.CountdownEndsAt)
+                    session?.LoadSelectedGameplay(current.CountdownGeneration);
+            }
         }
 
         public override void OnNetworkDespawn() => Unsubscribe();
@@ -202,6 +317,8 @@ namespace Game.Multiplayer
                 NetworkManager.OnClientDisconnectCallback -= OnClientDisconnected;
             }
             pendingRequestId = 0;
+            if (presentation != null) Destroy(presentation.gameObject);
+            presentation = null;
             if (session != null) session.UnregisterRoleSelection(this);
             session = null;
         }
