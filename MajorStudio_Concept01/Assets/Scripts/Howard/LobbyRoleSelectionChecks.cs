@@ -97,35 +97,15 @@ namespace Game.Multiplayer.Editor
                 uint firstSequence = roles.Current.ComicSequence;
                 hostSession.StartGame();
                 Check(roles.Current.ComicSequence == firstSequence && !hostSession.IsInGame, "Double Start begins one introduction, not gameplay");
-                for (int comic = 0; comic < 3; comic++)
-                {
-                    for (int segment = 0; segment < hostView.SegmentCount(comic); segment++)
-                    {
-                        await Until(() => remote.Current.Stage == SessionStage.ComicNarration &&
-                            remote.Current.ComicIndex == comic && remote.Current.NarrationSegmentIndex == segment,
-                            $"Both peers receive comic {comic + 1} segment {segment + 1}");
-                        Check(Get<Text>(hostView, "narrationText").text == Get<Text>(clientView, "narrationText").text &&
-                            Get<Text>(hostView, "narrationText").text == Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics")[comic].narration[segment].text,
-                            "Both peers render exact authored segment");
-                        var text = Get<Text>(hostView, "narrationText");
-                        Check(text.preferredHeight <= text.rectTransform.rect.height, "Narration fits existing text box without changing font or layout");
-                        Check(Math.Abs(remote.Current.StageEndsAt - remote.Current.StageStartedAt - 0.25) < 0.001,
-                            "Segment duration is Host-configured, not Client's four-second default");
-                        var before = roles.Current;
-                        remote.NotifyNarrationCompleted(comic, before.ComicSequence);
-                        roles.NotifyNarrationCompleted(comic, before.ComicSequence - 1);
-                        roles.NotifyNarrationCompleted(comic, before.ComicSequence);
-                        Check(roles.Current.Equals(before), "Client, stale and premature completion cannot skip narration");
-                    }
-                    await Until(() => remote.Current.Stage == SessionStage.ComicHold && remote.Current.ComicIndex == comic,
-                        "Separate post-narration hold replicated");
-                    Check(Math.Abs(remote.Current.StageEndsAt - remote.Current.StageStartedAt - 0.1) < 0.001,
-                        "Hold has its own configurable deadline");
-                }
-                await Until(() => remote.Current.Stage == SessionStage.SelectionEntering, "Authoritative scale transition received");
-                Check(!Get<GameObject>(clientView, "characterSelection").activeSelf &&
-                    !Get<Text>(clientView, "narrationText").gameObject.activeSelf, "No narration or interactive selection during scale-up");
-                await Until(() => remote.Current.Stage == SessionStage.CharacterSelection, "Three comics complete and enable selection only");
+                await CheckManualPages(roles, remote, hostView, clientView);
+                Check(roles.Current.MusicPlaying && remote.Current.MusicPlaying && roles.Current.MusicStartedAt == remote.Current.MusicStartedAt,
+                    "BGM shares server epoch on both peers");
+                await Task.Delay(800);
+                var hostMusic = roles.GetComponent<AudioSource>();
+                var clientMusic = remote.GetComponent<AudioSource>();
+                Check(hostMusic.isPlaying && clientMusic.isPlaying && Mathf.Abs(hostMusic.time - clientMusic.time) < .35f,
+                    "Both music sources play in sync");
+                Check(hostMusic.loop && hostMusic.volume == rolePrefab.GetComponent<AudioSource>().volume, "BGM loops at authored volume");
                 Check(hostView.FrameRectTransform.localScale == Vector3.one && clientView.FrameRectTransform.localScale == Vector3.one &&
                     Get<CutsceneCarousel.ComicPanel[]>(clientView, "comics")[2].image.rectTransform.localScale == Vector3.one,
                     "Final frame and Comic 3 reach exactly one on both peers");
@@ -195,7 +175,21 @@ namespace Game.Multiplayer.Editor
                 Check(Get<GameObject>(game.GetComponentInChildren<PreparationPreview>(true), "hacker").activeInHierarchy &&
                     Get<GameObject>(remoteGame.GetComponentInChildren<PreparationPreview>(true), "traveler").activeInHierarchy,
                     "Existing PreparationPreview uses selected roles");
+                await CheckEndScreensAndRestart(game, remoteGame);
+                await Task.Delay(100);
+                Check(!roles.Current.MusicPlaying && !remote.Current.MusicPlaying && !hostMusic.isPlaying && !clientMusic.isPlaying,
+                    "Ending stops BGM on both peers");
                 game.NetworkObject.Despawn();
+                roles.ReturnToCharacterSelection();
+                await Until(() => remote.Current.Stage == SessionStage.CharacterSelection && !remote.Current.GameStarted,
+                    "Restart destination synchronized to character selection");
+                Check(roles.Current.Host.Role == LobbyRole.Unassigned && roles.Current.Client.Role == LobbyRole.Unassigned &&
+                    !roles.Current.CountdownActive, "Restart clears both roles and old countdown");
+                await Task.Delay(700);
+                Check(roles.Current.MusicPlaying && remote.Current.MusicPlaying && hostMusic.isPlaying && clientMusic.isPlaying,
+                    "Restart resumes BGM at role selection");
+                Check(Get<Button>(hostView, "personButton").interactable && Get<Button>(clientView, "briefcaseButton").interactable,
+                    "Both players can choose again without replaying comics");
                 roles.ReturnToLobby();
                 await Until(() => remote.Current.Stage == SessionStage.Lobby, "Return to Lobby resets introduction and roles");
                 Check(hostSession.CanStartGame && roles.Current.Host.Role == LobbyRole.Unassigned, "Two connected players can start again without Ready");
@@ -205,7 +199,7 @@ namespace Game.Multiplayer.Editor
                 Check(hostView.FrameRectTransform.localScale != Vector3.one &&
                     Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics")[2].image.rectTransform.localScale == Vector3.one * 0.8f,
                     "Replay resets selection scales to authored baselines");
-                await Until(() => roles.Current.Stage == SessionStage.CharacterSelection, "Second introduction completes with fresh sequences");
+                await CheckManualPages(roles, remote, hostView, clientView);
                 roles.SelectRole(LobbyRole.Traveler);
                 remote.SelectRole(LobbyRole.Hacker);
                 await Confirm(remote);
@@ -277,6 +271,7 @@ namespace Game.Multiplayer.Editor
             Vector2 center = view.FrameRectTransform.anchoredPosition;
             for (int index = 1; index <= 2; index++)
             {
+                Set(view, "outgoingComic", index - 1);
                 var state = new LobbyRoleState { ComicIndex = index, Stage = SessionStage.ComicEntering };
                 foreach (float progress in new[] { 0f, 0.25f, 0.5f, 0.75f, 1f })
                 {
@@ -433,6 +428,131 @@ namespace Game.Multiplayer.Editor
             Get<Button>(host, "briefcaseButton").onClick.Invoke();
             await Confirm(roles);
             await Until(() => remote.Current.Host.Role == LobbyRole.Unassigned, "Clicking own Briefcase releases it");
+        }
+
+        private static async Task CheckManualPages(LobbyRoleSelection host, LobbyRoleSelection client,
+            CutsceneCarousel hostView, CutsceneCarousel clientView)
+        {
+            await Until(() => client.Current.Stage == SessionStage.ComicNarration, "Manual introduction starts");
+            await Task.Delay(500); // Longer than the old fixture's narration timer.
+            Check(host.Current.Host.CutscenePage == 0 && host.Current.Client.CutscenePage == 0,
+                "Pages never advance automatically");
+            host.NavigateCutscene(-1);
+            Check(host.Current.Host.CutscenePage == 0, "Left arrow on first page stays in bounds");
+            var panels = Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics");
+            Set(hostView, "transitionDuration", .6f);
+            host.NavigateCutscene(1);
+            await Task.Delay(180);
+            Check(panels[0].image.gameObject.activeSelf && panels[1].image.gameObject.activeSelf &&
+                panels[1].image.rectTransform.localRotation != Quaternion.identity &&
+                panels[1].image.rectTransform.localRotation == panels[1].rotatingFrame.rectTransform.localRotation,
+                "Manual right arrow rotates outgoing and incoming comic/frame pairs");
+            await Task.Delay(650);
+            host.NavigateCutscene(-1);
+            await Task.Delay(180);
+            Check(panels[0].image.gameObject.activeSelf && panels[1].image.gameObject.activeSelf &&
+                panels[0].image.rectTransform.anchoredPosition.x < Get<Vector2[]>(hostView, "comicCenters")[0].x,
+                "Left arrow reverses the rotation");
+            await Task.Delay(650);
+            var clientCanvas = clientView.GetComponent<Canvas>();
+            clientCanvas.enabled = false;
+            ScreenCapture.CaptureScreenshot(Path.Combine(evidenceFolder, "reading-layout.png"));
+            await Task.Delay(150);
+            clientCanvas.enabled = true;
+            Set(hostView, "transitionDuration", .1f);
+            for (int page = 1; page <= 3; page++)
+            {
+                host.NavigateCutscene(1);
+                await Until(() => client.Current.Host.CutscenePage == page, "Host page replicated");
+                Check(client.Current.Client.CutscenePage == 0, "Host navigation never advances client");
+            }
+            await Until(() => Get<GameObject>(hostView, "characterSelection").activeSelf, "Early player sees selection waiting screen");
+            Check(!Get<Button>(hostView, "personButton").interactable &&
+                Get<Text>(hostView, "navigationHint").text.Contains("WAITING"), "Selection waits for other reader");
+            host.SelectRole(LobbyRole.Traveler);
+            await Confirm(host);
+            Check(host.Current.Host.Role == LobbyRole.Unassigned, "Server rejects selection before both arrive");
+            host.NavigateCutscene(-1);
+            await Until(() => client.Current.Host.CutscenePage == 2, "Waiting player can go back");
+            Check(Get<Text>(hostView, "narrationText").text == Get<CutsceneCarousel.ComicPanel[]>(hostView, "comics")[2].narration[0].text,
+                "Back restores third comic narration");
+            host.NavigateCutscene(1);
+            for (int page = 1; page <= 3; page++)
+            {
+                client.NavigateCutscene(1);
+                await Until(() => client.Current.Client.CutscenePage == page, "Client page confirmed");
+                if (page < 3)
+                {
+                    await Task.Delay((int)(clientView.TransitionDuration * 1000) + 100);
+                    var text = Get<Text>(clientView, "narrationText");
+                    Check(text.text == Get<CutsceneCarousel.ComicPanel[]>(clientView, "comics")[page].narration[0].text,
+                        "Client sees own page's complete narration");
+                    Check(text.preferredHeight <= text.rectTransform.rect.height, "Manual page narration fits");
+                }
+            }
+            await Until(() => client.Current.Stage == SessionStage.CharacterSelection &&
+                Get<Button>(clientView, "personButton").interactable &&
+                Get<Button>(hostView, "personButton").interactable, "Both arrive and selection zoom finishes");
+            Check(!Get<Text>(hostView, "navigationHint").gameObject.activeSelf, "Navigation prompt hidden during shared selection");
+            client.NavigateCutscene(-1);
+            await Task.Delay(50);
+            Check(client.Current.Client.CutscenePage == 3, "Shared selection cannot be left during role assignment");
+        }
+
+        private static async Task CheckEndScreensAndRestart(CoopGameNetworkBridge host, CoopGameNetworkBridge client)
+        {
+            var first = host.GetComponentInChildren<InterviewController>(true);
+            var second = client.GetComponentInChildren<InterviewController>(true);
+            Set(first, "useOllama", false);
+            Set(second, "useOllama", false);
+            Set(host, "ready", true);
+            host.StartNewRound();
+            await Until(() => client.CurrentState.Round == host.CurrentState.Round && client.CurrentState.Round > 0,
+                "Initial preparation round synchronized");
+            uint round = host.CurrentState.Round;
+            Get<Button>(second, "restartButton").onClick.Invoke();
+            await Task.Delay(100);
+            Check(host.CurrentState.Round == round, "Restart blocked during active game");
+            const string submittedAnswer = "I AM HERE FOR CULTURAL EXCHANGE.";
+            typeof(InterviewController).GetProperty("LastSubmittedAnswer").SetValue(first, submittedAnswer);
+            typeof(InterviewController).GetProperty("ReviewingPurpose").SetValue(first, true);
+            Call(host, "Publish", host.CurrentState);
+            await Until(() => second.ReviewingPurpose && second.LastSubmittedAnswer == submittedAnswer,
+                "Submitted traveler answer reaches the other peer during review");
+            foreach (var bridge in new[] { host, client })
+            {
+                var hackerView = bridge.GetComponentInChildren<HackerInterviewView>(true);
+                Call(hackerView, "RefreshQuestion");
+                Check(Get<TMPro.TMP_Text>(hackerView, "currentQuestionText").text == "Your partner answered:\n" + submittedAnswer,
+                    "Hacker review subtitle displays the submitted answer");
+            }
+            typeof(InterviewController).GetProperty("ReviewingPurpose").SetValue(first, false);
+            Call(host, "Publish", host.CurrentState);
+            await Until(() => !second.ReviewingPurpose, "Review completion replicated");
+            var returnedView = client.GetComponentInChildren<HackerInterviewView>(true);
+            Call(returnedView, "RefreshQuestion");
+            Check(!Get<TMPro.TMP_Text>(returnedView, "currentQuestionText").text.StartsWith("Your partner answered:"),
+                "Answer subtitle clears after review");
+            foreach (bool approved in new[] { false })
+            {
+                Call(first, "Finish", approved, "Ending check");
+                Call(host, "Publish", host.CurrentState);
+                await Until(() => second.IsFinished, "Ending synchronized to both players");
+                foreach (var view in new[] { first, second })
+                {
+                    Check(Get<Image>(view, "resultImage").sprite == Get<Sprite>(view, approved ? "successSprite" : "failureSprite"),
+                        "Correct ending artwork displayed");
+                    Check(Get<GameObject>(view, "gameOverPanel").activeInHierarchy && Get<Button>(view, "restartButton").gameObject.activeInHierarchy,
+                        "Ending and restart button visible");
+                    Check(!Get<TMPro.TMP_Text>(view, "resultText").gameObject.activeSelf &&
+                        !Get<TMPro.TMP_Text>(view, "reasonText").gameObject.activeSelf, "Old text does not cover artwork");
+                }
+                ScreenCapture.CaptureScreenshot(Path.Combine(evidenceFolder, approved ? "ending-success.png" : "ending-failure.png"));
+                await Task.Delay(100);
+                // The scene-managed Restart now unloads this presentation.
+                // Its role-selection destination is checked by the caller.
+
+            }
         }
 
         private static async Task Confirm(LobbyRoleSelection roles)

@@ -63,7 +63,7 @@ namespace Game.Multiplayer.Editor
             GameObject root = PrefabUtility.LoadPrefabContents(LobbyPrefabPath);
             try
             {
-                Transform panel = root.transform.Find("LobbyPanel");
+                Transform panel = root.transform.Find("DesignViewport/LobbyPanel") ?? root.transform.Find("LobbyPanel");
                 if (panel == null) throw new System.InvalidOperationException("LobbyPanel was not found in the lobby prefab.");
                 if (panel.Find("StartGameButton") != null) return;
                 var template = panel.Find("LeaveRoomButton");

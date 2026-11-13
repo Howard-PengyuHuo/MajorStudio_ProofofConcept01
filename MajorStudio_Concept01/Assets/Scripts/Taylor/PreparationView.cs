@@ -10,8 +10,10 @@ namespace CarryOn.Taylor
         [SerializeField] private PreparationSession session;
         [SerializeField] private PlayerRole role;
         [SerializeField] private TMP_Text timer, status;
+        [SerializeField] private GameObject counterCallSubtitle;
         [SerializeField] private GameObject preparationPanel, interviewPanel, rulesPanel;
         [SerializeField] private TMP_InputField nameInput;
+        [SerializeField] private TMP_InputField lastNameInput;
         [UnityEngine.Serialization.FormerlySerializedAs("nationalityInput"), SerializeField] private TMP_InputField birthPlaceInput;
         [UnityEngine.Serialization.FormerlySerializedAs("ageInput"), SerializeField] private TMP_InputField issueDateInput;
         [UnityEngine.Serialization.FormerlySerializedAs("licenseInput"), SerializeField] private TMP_InputField passportCodeInput;
@@ -28,9 +30,11 @@ namespace CarryOn.Taylor
         private int lastPrintFrame = -1;
         private Coroutine focusRoutine;
         private TMP_InputField[] fields;
-        private TMP_InputField[] Fields => fields ??= new[] { nameInput, birthdayInput, birthPlaceInput, passportCodeInput };
+        private Transform PrintRoot => nameInput != null ? nameInput.transform.parent : null;
+        private TMP_InputField[] Fields => fields ??= new[] { nameInput, lastNameInput, birthdayInput, birthPlaceInput, passportCodeInput };
         [SerializeField] private GameObject printedCard;
         [SerializeField] private TMP_Text printedName;
+        [SerializeField] private TMP_Text printedLastName;
         [UnityEngine.Serialization.FormerlySerializedAs("printedNationality"), SerializeField] private TMP_Text printedBirthPlace;
         [UnityEngine.Serialization.FormerlySerializedAs("printedAge"), SerializeField] private TMP_Text printedIssueDate;
         [UnityEngine.Serialization.FormerlySerializedAs("printedLicense"), SerializeField] private TMP_Text printedPassportCode;
@@ -48,6 +52,7 @@ namespace CarryOn.Taylor
         private void OnEnable()
         {
             if (session == null) return;
+            if (role == PlayerRole.Hacker) DocumentPrintTarget.Register(PrintRoot);
             session.Changed += Refresh;
             printQueued = printSent = false;
             lastPrintFrame = -1;
@@ -60,6 +65,7 @@ namespace CarryOn.Taylor
             if (nameInput != null)
             {
                 nameInput.onValueChanged.AddListener(EditName);
+                lastNameInput?.onValueChanged.AddListener(EditLastName);
                 birthPlaceInput?.onValueChanged.AddListener(EditBirthPlace);
                 issueDateInput?.onValueChanged.AddListener(EditIssueDate);
                 expiryDateInput?.onValueChanged.AddListener(EditExpiryDate);
@@ -70,6 +76,7 @@ namespace CarryOn.Taylor
         }
         private void OnDisable()
         {
+            if (role == PlayerRole.Hacker) DocumentPrintTarget.Unregister(PrintRoot);
             if (session != null) session.Changed -= Refresh;
             foreach (var input in Fields)
                 if (input != null) input.onSubmit.RemoveListener(SubmitDocument);
@@ -78,13 +85,15 @@ namespace CarryOn.Taylor
             ClearHighlights();
             if (nameInput == null) return;
             nameInput.onValueChanged.RemoveListener(EditName);
+            lastNameInput?.onValueChanged.RemoveListener(EditLastName);
             birthPlaceInput?.onValueChanged.RemoveListener(EditBirthPlace);
             issueDateInput?.onValueChanged.RemoveListener(EditIssueDate);
             expiryDateInput?.onValueChanged.RemoveListener(EditExpiryDate);
             birthdayInput?.onValueChanged.RemoveListener(EditBirthday);
             passportCodeInput?.onValueChanged.RemoveListener(EditPassportCode);
         }
-        private void EditName(string value) => Edit(nameInput, IdentityField.Name, value);
+        private void EditName(string value) => Edit(nameInput, lastNameInput != null ? IdentityField.FirstName : IdentityField.Name, value);
+        private void EditLastName(string value) => Edit(lastNameInput, IdentityField.LastName, value);
         private void EditBirthPlace(string value) => Edit(birthPlaceInput, IdentityField.BirthPlace, value);
         private void EditIssueDate(string value) => Edit(issueDateInput, IdentityField.IssueDate, value);
         private void EditExpiryDate(string value) => Edit(expiryDateInput, IdentityField.ExpiryDate, value);
@@ -101,8 +110,15 @@ namespace CarryOn.Taylor
             RefreshPrintHint();
         }
 
+        private void Update()
+        {
+            if (role == PlayerRole.Hacker && DocumentPrintTarget.EnterPressed && DocumentPrintTarget.IsTarget(PrintRoot))
+                SubmitDocument("");
+        }
+
         private void SubmitDocument(string ignored)
         {
+            if (!DocumentPrintTarget.IsTarget(PrintRoot)) return;
             if (role != PlayerRole.Hacker || session == null || !isActiveAndEnabled ||
                 session.Phase != EntryPhase.Preparation || session.HasPrintedIdentity ||
                 printQueued || lastPrintFrame == Time.frameCount) return;
@@ -111,7 +127,7 @@ namespace CarryOn.Taylor
             foreach (var input in Fields)
             {
                 if (input != null && !string.IsNullOrWhiteSpace(input.text) &&
-                    (!IsDateInput(input) || PassportDate.TryNormalize(input.text, out _))) continue;
+                    (!IsDateInput(input) || ValidDateInput(input))) continue;
                 if (input == null) return;
                 var outline = input.GetComponent<UnityEngine.UI.Outline>();
                 if (outline != null) outline.enabled = true;
@@ -155,25 +171,35 @@ namespace CarryOn.Taylor
             string dateError = null;
             foreach (var input in Fields)
                 if (input != null && IsDateInput(input) && !string.IsNullOrWhiteSpace(input.text) &&
-                    !PassportDate.TryNormalize(input.text, out _))
+                    !ValidDateInput(input))
                 {
-                    dateError = (input == birthdayInput ? "Birthday" : input == issueDateInput ? "Issued date" : "Expiry date") +
-                        ": invalid or ambiguous date. " + PassportDate.Hint;
+                    dateError = input == birthdayInput ? "BIRTH YEAR: ENTER 4 DIGITS (E.G. 1950)." :
+                        "INVALID DATE. " + PassportDate.Hint;
                     complete = false;
                     break;
                 }
-            printHint.text = session.HasPrintedIdentity ? "PRINTED / Delivered to your partner" :
-                session.Phase != EntryPhase.Preparation ? "Printing is available during the queue." :
-                printQueued ? "PASSPORT / PRINTING..." : dateError != null ? dateError : complete ? "PASSPORT / ENTER TO PRINT" :
-                "Fill in all fields, then press Enter to print.";
+            bool passportPrinted = session.HasPrintedIdentity;
+            bool governmentPrinted = session.HasPrintedGovernment;
+            printHint.text = passportPrinted || governmentPrinted
+                ? "PASSPORT: " + (passportPrinted ? "PRINTED" : "NOT PRINTED") +
+                  " / GOVERNMENT PAPER: " + (governmentPrinted ? "PRINTED" : "NOT PRINTED") +
+                  (passportPrinted && governmentPrinted ? "\nBOTH DOCUMENTS DELIVERED TO YOUR PARTNER." :
+                   "\nFINISH THE OTHER DOCUMENT, HOVER OVER IT + ENTER TO PRINT.")
+                : printQueued ? "PASSPORT / PRINTING..." : dateError ??
+                  "FILL BOTH DOCUMENTS. HOVER OVER A COMPLETED DOCUMENT\nAND PRESS ENTER TO PRINT IT FOR YOUR PARTNER.";
             printHint.color = complete || session.HasPrintedIdentity ? readyHintColor : Color.white;
         }
 
         private bool IsDateInput(TMP_InputField input) =>
             input == birthdayInput || input == issueDateInput || input == expiryDateInput;
 
+        private bool ValidDateInput(TMP_InputField input) => input == birthdayInput
+            ? PassportDate.TryNormalizeBirthYear(input.text, out _)
+            : PassportDate.TryNormalize(input.text, out _);
+
         private void Refresh()
         {
+            if (counterCallSubtitle != null) counterCallSubtitle.SetActive(session.Phase == EntryPhase.CalledToCounter);
             if (!session.HasPrintedIdentity && session.Phase != EntryPhase.Preparation)
             {
                 printQueued = printSent = false;
@@ -196,20 +222,19 @@ namespace CarryOn.Taylor
             bool editing = session.Phase == EntryPhase.Preparation && !session.HasPrintedIdentity;
             if (printButton != null) printButton.interactable = session.CanPrint;
             if (printButtonLabel != null) printButtonLabel.text = session.HasPrintedIdentity ? "PRINTED" : "PRINT";
-            if (printedCard != null) printedCard.SetActive(session.Phase == EntryPhase.Preparation && session.HasPrintedIdentity);
+            if (printedCard != null) printedCard.SetActive(session.Phase != EntryPhase.Interview && session.HasPrintedIdentity);
             if (session.HasPrintedIdentity)
             {
                 var printed = session.PrintedIdentity;
-                if (printedName != null) printedName.text = printed.Name;
+                if (printedName != null) printedName.text = printedLastName != null ? printed.FirstName : printed.Name;
+                if (printedLastName != null) printedLastName.text = printed.LastName;
                 if (printedBirthPlace != null) printedBirthPlace.text = printed.BirthPlace;
                 if (printedIssueDate != null) printedIssueDate.text = printed.IssueDate;
                 if (printedExpiryDate != null) printedExpiryDate.text = printed.ExpiryDate;
                 if (printedBirthday != null) printedBirthday.text = printed.Birthday;
                 if (printedPassportCode != null) printedPassportCode.text = printed.PassportCode;
             }
-            int seconds = Mathf.CeilToInt(session.RemainingSeconds);
-            if (timer != null) timer.text = session.Phase == EntryPhase.Waiting ? "READY TO QUEUE" :
-                interview ? "AT THE CHECKPOINT" : $"QUEUE  {seconds / 60:00}:{seconds % 60:00}";
+            if (timer != null) timer.text = session.PeopleAhead.ToString();
             if (preparationPanel != null) preparationPanel.SetActive(!interview);
             if (interviewPanel != null) interviewPanel.SetActive(interview);
             if (rulesPanel != null) rulesPanel.SetActive(role == PlayerRole.Traveler ? !interview :
@@ -222,7 +247,8 @@ namespace CarryOn.Taylor
             else
             {
                 var card = session.Identity;
-                SetInput(nameInput, card.Name, editing);
+                SetInput(nameInput, lastNameInput != null ? card.FirstName : card.Name, editing);
+                SetInput(lastNameInput, card.LastName, editing);
                 SetInput(birthPlaceInput, card.BirthPlace, editing);
                 SetInput(issueDateInput, card.IssueDate, editing);
                 SetInput(expiryDateInput, card.ExpiryDate, editing);
@@ -235,7 +261,7 @@ namespace CarryOn.Taylor
                 if (status != null) status.text = interview ? "IDENTITY LOCKED  /  Use your card and regulations to help your partner." :
                     !editing ? "Start the queue to edit the identity card." :
                     card.IsComplete ? "All fields filled. You can edit until time expires. Changes save automatically." :
-                    "Fill in name, birthday, nationality and passport code. Press Enter to print.";
+                    "Fill in name, birth year, nationality and passport code. Hover over the document + Enter to print.";
             }
             RefreshPrintHint();
             if (printQueued && !printSent && pendingEdits.Count == 0 && session.CanPrint)

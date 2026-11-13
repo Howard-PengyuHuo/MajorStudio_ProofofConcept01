@@ -7,11 +7,14 @@ namespace Game.Multiplayer
 {
     public struct NetworkIdentity : INetworkSerializable, IEquatable<NetworkIdentity>
     {
+        public string FirstName, LastName;
         public FixedString512Bytes Name, BirthPlace, IssueDate, PassportCode, ExpiryDate, Birthday;
 
         public NetworkIdentity(IdentityCard card)
         {
-            Name = Text(card.Name);
+            FirstName = card.FirstName ?? "";
+            LastName = card.LastName ?? "";
+            Name = Text(card.Name, 129);
             BirthPlace = Text(card.BirthPlace);
             IssueDate = Text(card.IssueDate);
             PassportCode = Text(card.PassportCode);
@@ -21,6 +24,7 @@ namespace Game.Multiplayer
 
         public IdentityCard ToCard() => new()
         {
+            FirstName = FirstName, LastName = LastName,
             Name = Name.ToString(), BirthPlace = BirthPlace.ToString(),
             IssueDate = IssueDate.ToString(), PassportCode = PassportCode.ToString(), ExpiryDate = ExpiryDate.ToString(),
             Birthday = Birthday.ToString()
@@ -36,6 +40,9 @@ namespace Game.Multiplayer
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
+            if (serializer.IsWriter) { FirstName ??= ""; LastName ??= ""; }
+            serializer.SerializeValue(ref FirstName);
+            serializer.SerializeValue(ref LastName);
             serializer.SerializeValue(ref Name);
             serializer.SerializeValue(ref BirthPlace);
             serializer.SerializeValue(ref IssueDate);
@@ -44,7 +51,7 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref Birthday);
         }
 
-        public bool Equals(NetworkIdentity other) => Name.Equals(other.Name) && BirthPlace.Equals(other.BirthPlace)
+        public bool Equals(NetworkIdentity other) => string.Equals(FirstName ?? "", other.FirstName ?? "", StringComparison.Ordinal) && string.Equals(LastName ?? "", other.LastName ?? "", StringComparison.Ordinal) && Name.Equals(other.Name) && BirthPlace.Equals(other.BirthPlace)
             && IssueDate.Equals(other.IssueDate) && PassportCode.Equals(other.PassportCode) && ExpiryDate.Equals(other.ExpiryDate)
             && Birthday.Equals(other.Birthday);
     }
@@ -58,13 +65,17 @@ namespace Game.Multiplayer
         public double PreparationEndsAt;
         public double QuestionEndsAt;
         public double IntroductionEndsAt;
+        public double DenialEndsAt;
+        public int InterviewSeed;
         public bool DocumentMismatch, ReviewingPurpose;
         public FixedString512Bytes PurposeLine;
+        public string LastSubmittedAnswer;
         public NetworkIdentity Identity, PrintedIdentity;
         public NetworkGovernmentDocument Government, PrintedGovernment;
         public bool HasPrintedGovernment;
         public bool HasPrintedIdentity, IsFinished, EntryApproved;
         public int QuestionIndex, Reputation;
+        public int AcceptedAnswerCount;
         public string ResultReason;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
@@ -78,9 +89,13 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref PreparationEndsAt);
             serializer.SerializeValue(ref QuestionEndsAt);
             serializer.SerializeValue(ref IntroductionEndsAt);
+            serializer.SerializeValue(ref DenialEndsAt);
+            serializer.SerializeValue(ref InterviewSeed);
             serializer.SerializeValue(ref DocumentMismatch);
             serializer.SerializeValue(ref ReviewingPurpose);
             serializer.SerializeValue(ref PurposeLine);
+            if (serializer.IsWriter && LastSubmittedAnswer == null) LastSubmittedAnswer = string.Empty;
+            serializer.SerializeValue(ref LastSubmittedAnswer);
             serializer.SerializeValue(ref Identity);
             serializer.SerializeValue(ref PrintedIdentity);
             serializer.SerializeValue(ref Government);
@@ -91,6 +106,7 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref EntryApproved);
             serializer.SerializeValue(ref QuestionIndex);
             serializer.SerializeValue(ref Reputation);
+            serializer.SerializeValue(ref AcceptedAnswerCount);
             serializer.SerializeValue(ref ResultReason);
         }
 
@@ -99,12 +115,14 @@ namespace Game.Multiplayer
             && Phase == other.Phase && PreparationEndsAt.Equals(other.PreparationEndsAt)
             && QuestionEndsAt.Equals(other.QuestionEndsAt)
             && IntroductionEndsAt.Equals(other.IntroductionEndsAt)
+            && DenialEndsAt.Equals(other.DenialEndsAt) && InterviewSeed == other.InterviewSeed
             && DocumentMismatch == other.DocumentMismatch && ReviewingPurpose == other.ReviewingPurpose && PurposeLine.Equals(other.PurposeLine)
+            && string.Equals(LastSubmittedAnswer, other.LastSubmittedAnswer, StringComparison.Ordinal)
             && Identity.Equals(other.Identity) && PrintedIdentity.Equals(other.PrintedIdentity)
             && Government.Equals(other.Government) && PrintedGovernment.Equals(other.PrintedGovernment)
             && HasPrintedGovernment == other.HasPrintedGovernment
             && HasPrintedIdentity == other.HasPrintedIdentity && IsFinished == other.IsFinished
             && EntryApproved == other.EntryApproved && QuestionIndex == other.QuestionIndex
-            && Reputation == other.Reputation && string.Equals(ResultReason, other.ResultReason, StringComparison.Ordinal);
+            && Reputation == other.Reputation && AcceptedAnswerCount == other.AcceptedAnswerCount && string.Equals(ResultReason, other.ResultReason, StringComparison.Ordinal);
     }
 }

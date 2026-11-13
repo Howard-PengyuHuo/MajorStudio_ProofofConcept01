@@ -21,9 +21,12 @@ namespace CarryOn.Taylor
             [NonSerialized] public bool revealed;
             [NonSerialized] public UnityAction click;
             [NonSerialized] public Vector3 initialPosition;
+            [NonSerialized] public Quaternion initialRotation;
+            [NonSerialized] public Vector3 initialScale;
         }
 
         [SerializeField] private PreparationSession session;
+        [SerializeField] private bool showAllDocumentsOnDesk;
         [SerializeField] private UnityEngine.UI.Button spyInfoButton;
         [SerializeField] private UnityEngine.UI.Button entryInfoButton;
         [SerializeField] private GameObject menuRoot;
@@ -37,7 +40,12 @@ namespace CarryOn.Taylor
         private void Awake()
         {
             foreach (var entry in documents)
-                if (entry?.document != null) entry.initialPosition = entry.document.transform.localPosition;
+                if (entry?.document != null)
+                {
+                    entry.initialPosition = entry.document.transform.localPosition;
+                    entry.initialRotation = entry.document.transform.localRotation;
+                    entry.initialScale = entry.document.transform.localScale;
+                }
             ResetDocuments();
         }
 
@@ -130,11 +138,13 @@ namespace CarryOn.Taylor
             foreach (var entry in documents)
             {
                 if (entry == null) continue;
-                entry.revealed = false;
+                entry.revealed = showAllDocumentsOnDesk;
                 if (entry.document != null)
                 {
-                    entry.document.SetActive(false);
+                    entry.document.SetActive(showAllDocumentsOnDesk);
                     entry.document.transform.localPosition = entry.initialPosition;
+                    entry.document.transform.localRotation = entry.initialRotation;
+                    entry.document.transform.localScale = entry.initialScale;
                 }
                 RefreshEntry(entry);
             }

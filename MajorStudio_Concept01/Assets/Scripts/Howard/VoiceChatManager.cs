@@ -22,14 +22,15 @@ namespace Game.Multiplayer
         private float speechUsed;
         private uint speechRound;
         private bool speechBudgetActive;
+        private bool queueVoiceActive;
         public string Status { get; private set; } = "Voice: offline";
         public bool IsConnected { get; private set; }
         public int ParticipantCount { get; private set; }
         public bool MicrophoneMuted => microphoneMuted;
-        public bool PushToTalkRequired => session != null && session.IsInGame;
+        public bool PushToTalkRequired => session != null && session.IsInGame && !queueVoiceActive;
         public bool PushToTalkHeld { get; private set; }
         private bool applicationPaused;
-        public bool ListenOnly => session != null && session.IsInGame &&
+        public bool ListenOnly => session != null && session.IsInGame && !queueVoiceActive &&
             (session.RoleSelection == null ||
              !session.RoleSelection.TryGetRole(session.LocalClientId, out var role) ||
              role != CarryOn.Taylor.PlayerRole.Hacker);
@@ -63,6 +64,7 @@ namespace Game.Multiplayer
             if (!session.IsInGame && state == ConnectionState.Connected)
             {
                 speechBudgetActive = false;
+                queueVoiceActive = false;
                 speechRound = 0;
                 speechUsed = 0;
             }
@@ -104,11 +106,12 @@ namespace Game.Multiplayer
         }
 
         // Called from the replicated round, not from panel enable or voice reconnect.
-        public void BeginSpeechRound(uint round, bool isHacker, bool interviewActive = false)
+        public void BeginSpeechRound(uint round, bool isHacker, bool interviewActive = false, bool queueActive = false)
         {
             if (round == 0) return;
             if (speechRound != round) { speechRound = round; speechUsed = 0; }
             speechBudgetActive = isHacker && interviewActive;
+            queueVoiceActive = queueActive;
             SetMicrophoneMuted(microphoneMuted);
         }
 

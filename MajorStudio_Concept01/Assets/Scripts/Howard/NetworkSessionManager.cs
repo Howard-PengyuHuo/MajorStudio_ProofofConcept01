@@ -32,6 +32,8 @@ namespace Game.Multiplayer
         private TaskCompletionSource<bool> connectionCompletion;
         private int operationVersion;
         private NetworkSceneManager subscribedSceneManager;
+        private bool returningToCharacterSelection;
+        private bool gameplayUnloadPending;
 
         public event Action<ConnectionState, string> StateChanged;
         public event Action<IReadOnlyList<NetworkPlayerInfo>> PlayersChanged;
@@ -127,10 +129,27 @@ namespace Game.Multiplayer
         [ContextMenu("Return To Lobby (Host)")]
         public void ReturnToLobby()
         {
-            if (!IsHost || !IsInGame) return;
+            UnloadGameplay(false);
+        }
+
+        internal void ReturnToCharacterSelection()
+        {
+            UnloadGameplay(true);
+        }
+
+        private void UnloadGameplay(bool selectRoles)
+        {
+            if (!IsHost || !IsInGame || gameplayUnloadPending) return;
             Scene scene = SceneManager.GetSceneByName(GameplaySceneName);
-            if (scene.IsValid() && scene.isLoaded)
-                networkManager.SceneManager.UnloadScene(scene);
+            if (!scene.IsValid() || !scene.isLoaded) return;
+            returningToCharacterSelection = selectRoles;
+            gameplayUnloadPending = true;
+            var result = networkManager.SceneManager.UnloadScene(scene);
+            if (result != SceneEventProgressStatus.Started)
+            {
+                gameplayUnloadPending = returningToCharacterSelection = false;
+                SetState(ConnectionState.Connected, $"Could not return from GameScene: {result}");
+            }
         }
 
         private void SubscribeToSceneEvents()
@@ -152,8 +171,13 @@ namespace Game.Multiplayer
             else if (sceneEvent.SceneEventType == SceneEventType.UnloadEventCompleted)
             {
                 IsInGame = false;
-                if (IsHost) RoleSelection?.ReturnToLobby();
-                SetState(ConnectionState.Connected, "Returned to Lobby");
+                if (IsHost)
+                {
+                    if (returningToCharacterSelection) RoleSelection?.ReturnToCharacterSelection();
+                    else RoleSelection?.ReturnToLobby();
+                }
+                gameplayUnloadPending = returningToCharacterSelection = false;
+                SetState(ConnectionState.Connected, "Returned from gameplay");
             }
         }
 
@@ -432,6 +456,8 @@ namespace Game.Multiplayer
 
         private void SetState(ConnectionState newState, string message)
         {
+            if (newState == ConnectionState.Disconnected)
+                gameplayUnloadPending = returningToCharacterSelection = false;
             State = newState;
             StatusMessage = message;
             StateChanged?.Invoke(State, StatusMessage);

@@ -13,6 +13,7 @@ namespace Game.Multiplayer
         public uint Version;
         public bool Connected;
         public LobbyRole Role;
+        public int CutscenePage;
 
         public void NetworkSerialize<T>(BufferSerializer<T> serializer) where T : IReaderWriter
         {
@@ -20,10 +21,11 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref Version);
             serializer.SerializeValue(ref Connected);
             serializer.SerializeValue(ref Role);
+            serializer.SerializeValue(ref CutscenePage);
         }
 
         public bool Equals(LobbyPlayerSelection other) => ClientId == other.ClientId && Version == other.Version &&
-            Connected == other.Connected && Role == other.Role;
+            Connected == other.Connected && Role == other.Role && CutscenePage == other.CutscenePage;
     }
 
     // One server-written value keeps assignments, comic phase and countdown generation atomic.
@@ -37,6 +39,8 @@ namespace Game.Multiplayer
         public uint ComicSequence, CountdownGeneration;
         public double StageStartedAt, StageEndsAt, CountdownEndsAt;
         public bool CountdownActive;
+        public bool MusicPlaying;
+        public double MusicStartedAt;
 
         public bool HasDistinctRoles => Host.Connected && Client.Connected &&
             ((Host.Role == LobbyRole.Traveler && Client.Role == LobbyRole.Hacker) ||
@@ -79,6 +83,8 @@ namespace Game.Multiplayer
             serializer.SerializeValue(ref StageEndsAt);
             serializer.SerializeValue(ref CountdownEndsAt);
             serializer.SerializeValue(ref CountdownActive);
+            serializer.SerializeValue(ref MusicPlaying);
+            serializer.SerializeValue(ref MusicStartedAt);
         }
 
         public bool Equals(LobbyRoleState other) => Host.Equals(other.Host) && Client.Equals(other.Client) &&
@@ -86,6 +92,7 @@ namespace Game.Multiplayer
             NarrationSegmentIndex == other.NarrationSegmentIndex &&
             ComicSequence == other.ComicSequence && CountdownGeneration == other.CountdownGeneration &&
             StageStartedAt.Equals(other.StageStartedAt) && StageEndsAt.Equals(other.StageEndsAt) &&
-            CountdownEndsAt.Equals(other.CountdownEndsAt) && CountdownActive == other.CountdownActive;
+            CountdownEndsAt.Equals(other.CountdownEndsAt) && CountdownActive == other.CountdownActive &&
+            MusicPlaying == other.MusicPlaying && MusicStartedAt.Equals(other.MusicStartedAt);
     }
 }

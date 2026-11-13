@@ -11,7 +11,7 @@ namespace Game.Multiplayer
     public sealed class LobbyRoleSelection : NetworkBehaviour
     {
         [SerializeField] private CutsceneCarousel cutscenePrefab;
-        [SerializeField, Min(0.1f)] private float countdownDuration = 10;
+        [SerializeField, Min(0.1f)] private float countdownDuration = 5;
         private CutsceneCarousel presentation;
         private readonly NetworkVariable<LobbyRoleState> state = new(default,
             NetworkVariableReadPermission.Everyone, NetworkVariableWritePermission.Server);
@@ -87,6 +87,7 @@ namespace Game.Multiplayer
                 current = default;
             else return;
             lastRequestIds.Remove(id);
+            current.MusicPlaying = false;
             CancelCountdown(ref current);
             // A pre-game departure returns the survivor to the custom Lobby. A new pair replays the comics.
             if (!current.GameStarted)
@@ -164,13 +165,47 @@ namespace Game.Multiplayer
         {
             if (!IsServer || !CanStartGame || presentation == null || presentation.PanelCount == 0) return false;
             var current = state.Value;
+            current.MusicPlaying = true;
+            current.MusicStartedAt = ServerNow + .25;
             current.Host.Role = current.Client.Role = LobbyRole.Unassigned;
+            current.Host.CutscenePage = current.Client.CutscenePage = 0;
             current.Host.Version++;
             current.Client.Version++;
             CancelCountdown(ref current);
-            EnterComic(ref current, 0);
+            current.ComicSequence++;
+            current.Stage = SessionStage.ComicNarration;
+            current.ComicIndex = current.NarrationSegmentIndex = 0;
+            current.StageStartedAt = ServerNow;
+            current.StageEndsAt = 0;
             state.Value = current;
             return true;
+        }
+
+        public void NavigateCutscene(int direction)
+        {
+            if (!IsSpawned || Current.Stage != SessionStage.ComicNarration ||
+                (direction != -1 && direction != 1) || !TryGetLocalPlayer(out var player)) return;
+            NavigateCutsceneRpc(Current.ComicSequence, player.CutscenePage, direction);
+        }
+
+        [Rpc(SendTo.Server, InvokePermission = RpcInvokePermission.Everyone)]
+        private void NavigateCutsceneRpc(uint sequence, int expectedPage, int direction, RpcParams rpcParams = default)
+        {
+            var current = state.Value;
+            ulong sender = rpcParams.Receive.SenderClientId;
+            if (presentation == null || current.Stage != SessionStage.ComicNarration ||
+                sequence != current.ComicSequence || (direction != -1 && direction != 1) ||
+                !current.TryGetPlayer(sender, out var player) || player.CutscenePage != expectedPage) return;
+            player.CutscenePage = Mathf.Clamp(player.CutscenePage + direction, 0, presentation.PanelCount);
+            if (sender == current.Host.ClientId) current.Host = player;
+            else current.Client = player;
+            if (current.Host.CutscenePage == presentation.PanelCount &&
+                current.Client.Connected && current.Client.CutscenePage == presentation.PanelCount)
+            {
+                current.Stage = SessionStage.CharacterSelection;
+                current.ComicIndex = presentation.PanelCount - 1;
+            }
+            state.Value = current;
         }
 
         private void EnterComic(ref LobbyRoleState current, int index)
@@ -183,19 +218,8 @@ namespace Game.Multiplayer
             current.StageEndsAt = ServerNow + presentation.TransitionDuration;
         }
 
-        public void NotifyNarrationCompleted(int comicIndex, uint sequence)
-        {
-            // No client completion RPC: only the Host's final segment deadline can finish narration.
-            if (!IsSpawned || !IsServer || presentation == null) return;
-            var current = state.Value;
-            if (current.Stage != SessionStage.ComicNarration || current.ComicIndex != comicIndex ||
-                current.ComicSequence != sequence || ServerNow < current.StageEndsAt ||
-                current.NarrationSegmentIndex + 1 < presentation.SegmentCount(comicIndex)) return;
-            current.Stage = SessionStage.ComicHold;
-            current.StageStartedAt = ServerNow;
-            current.StageEndsAt = ServerNow + presentation.HoldDuration(comicIndex);
-            state.Value = current;
-        }
+        // Audio/text completion no longer advances pages; each player uses the arrow keys.
+        public void NotifyNarrationCompleted(int comicIndex, uint sequence) { }
 
         private static void CancelCountdown(ref LobbyRoleState current)
         {
@@ -228,10 +252,32 @@ namespace Game.Multiplayer
             state.Value = current;
         }
 
+        internal void ReturnToCharacterSelection()
+        {
+            if (!IsServer || presentation == null) return;
+            var current = state.Value;
+            current.MusicPlaying = true;
+            current.MusicStartedAt = ServerNow + .25;
+            current.GameStarted = false;
+            current.Stage = SessionStage.CharacterSelection;
+            current.Host.Role = current.Client.Role = LobbyRole.Unassigned;
+            current.Host.CutscenePage = current.Client.CutscenePage = presentation.PanelCount;
+            current.Host.Version++;
+            current.Client.Version++;
+            current.ComicIndex = Mathf.Max(0, presentation.PanelCount - 1);
+            current.NarrationSegmentIndex = -1;
+            current.ComicSequence++;
+            current.StageStartedAt = ServerNow;
+            current.StageEndsAt = 0;
+            CancelCountdown(ref current);
+            state.Value = current;
+        }
+
         internal void ReturnToLobby()
         {
             if (!IsServer) return;
             var current = state.Value;
+            current.MusicPlaying = false;
             current.GameStarted = false;
             current.Stage = SessionStage.Lobby;
             current.ComicSequence++;
@@ -239,6 +285,14 @@ namespace Game.Multiplayer
             CancelCountdown(ref current);
             current.Host.Version++;
             current.Client.Version++;
+            state.Value = current;
+        }
+
+        internal void StopMusic()
+        {
+            if (!IsServer || !state.Value.MusicPlaying) return;
+            var current = state.Value;
+            current.MusicPlaying = false;
             state.Value = current;
         }
 
@@ -257,42 +311,7 @@ namespace Game.Multiplayer
         {
             var current = state.Value;
             if (NetworkManager.ConnectedClientsIds.Count != NetworkSessionManager.MaximumPlayers) return;
-            if (current.Stage == SessionStage.ComicEntering && ServerNow >= current.StageEndsAt)
-            {
-                current.Stage = SessionStage.ComicNarration;
-                current.NarrationSegmentIndex = 0;
-                current.StageStartedAt = ServerNow;
-                current.StageEndsAt = ServerNow + presentation.SegmentDuration(current.ComicIndex, 0);
-                state.Value = current;
-            }
-            else if (current.Stage == SessionStage.ComicNarration && ServerNow >= current.StageEndsAt)
-            {
-                if (current.NarrationSegmentIndex + 1 < presentation.SegmentCount(current.ComicIndex))
-                {
-                    current.NarrationSegmentIndex++;
-                    current.StageStartedAt = ServerNow;
-                    current.StageEndsAt = ServerNow + presentation.SegmentDuration(current.ComicIndex, current.NarrationSegmentIndex);
-                    state.Value = current;
-                }
-                else NotifyNarrationCompleted(current.ComicIndex, current.ComicSequence);
-            }
-            else if (current.Stage == SessionStage.ComicHold && ServerNow >= current.StageEndsAt)
-            {
-                if (current.ComicIndex + 1 < presentation.PanelCount) EnterComic(ref current, current.ComicIndex + 1);
-                else
-                {
-                    current.Stage = SessionStage.SelectionEntering;
-                    current.StageStartedAt = ServerNow;
-                    current.StageEndsAt = ServerNow + presentation.SelectionScaleDuration;
-                }
-                state.Value = current;
-            }
-            else if (current.Stage == SessionStage.SelectionEntering && ServerNow >= current.StageEndsAt)
-            {
-                current.Stage = SessionStage.CharacterSelection;
-                state.Value = current;
-            }
-            else if (current.Stage == SessionStage.CharacterSelection && current.HasDistinctRoles)
+            if (current.Stage == SessionStage.CharacterSelection && current.HasDistinctRoles)
             {
                 if (!current.CountdownActive)
                 {

@@ -8,6 +8,9 @@ namespace CarryOn.Taylor
         [SerializeField] private InterviewController interview;
         [SerializeField] private GameObject[] visuals;
         [SerializeField, Min(0.01f)] private float visibleSeconds = 1.5f;
+        [SerializeField] private AudioSource suspicionAudio;
+        [SerializeField] private AudioClip ehmmm;
+        [SerializeField] private AudioClip writing;
         private float hideAt = -1;
 
         private void OnEnable()
@@ -24,9 +27,15 @@ namespace CarryOn.Taylor
 
         private void Show()
         {
-            // Repeated shakes extend visibility until 1.5 seconds after the latest shake.
+            // Each actual suspicion increase refreshes the icon and plays one reaction.
             hideAt = Time.unscaledTime + visibleSeconds;
             SetVisible(true);
+            var clip = Random.value < .5f ? ehmmm : writing;
+            if (suspicionAudio != null && clip != null)
+            {
+                suspicionAudio.Stop();
+                suspicionAudio.PlayOneShot(clip);
+            }
         }
 
         private void Update()
