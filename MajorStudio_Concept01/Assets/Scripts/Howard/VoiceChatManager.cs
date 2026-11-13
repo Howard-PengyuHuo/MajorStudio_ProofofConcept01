@@ -29,6 +29,8 @@ namespace Game.Multiplayer
         public bool MicrophoneMuted => microphoneMuted;
         public bool PushToTalkRequired => session != null && session.IsInGame && !queueVoiceActive;
         public bool PushToTalkHeld { get; private set; }
+        public bool VoiceChannelAvailable => IsConnected && !stopped && service != null && service.IsLoggedIn &&
+            connectedChannel.Length > 0 && connectedChannel == desiredChannel;
         private bool applicationPaused;
         public bool ListenOnly => session != null && session.IsInGame && !queueVoiceActive &&
             (session.RoleSelection == null ||
@@ -187,7 +189,11 @@ namespace Game.Multiplayer
 #endif
                     if (stopped || attempted != desiredChannel) continue;
                     if (!service.IsLoggedIn)
-                        await service.LoginAsync(new LoginOptions { DisplayName = "Player " + session.LocalClientId, EnableTTS = false });
+                        await service.LoginAsync(new LoginOptions
+                        {
+                            DisplayName = "Player " + session.LocalClientId, EnableTTS = false,
+                            ParticipantUpdateFrequency = ParticipantPropertyUpdateFrequency.TenPerSecond
+                        });
                     if (stopped || attempted != desiredChannel) continue;
                     joiningChannel = attempted;
                     channelJoined = new TaskCompletionSource<bool>();
@@ -240,6 +246,28 @@ namespace Game.Multiplayer
                 else service.UnmuteInputDevice();
             }
             if (IsConnected) RefreshParticipants();
+        }
+
+        /// <summary>Read-only UI source; never opens the microphone or changes channel membership.</summary>
+        public bool TryGetCommsParticipant(out VivoxParticipant participant, out bool transmitting)
+        {
+            participant = null;
+            transmitting = false;
+            if (!VoiceChannelAvailable || session == null || !session.IsInGame || session.RoleSelection == null ||
+                !session.RoleSelection.TryGetRole(session.LocalClientId, out var role)) return false;
+            bool self = role == CarryOn.Taylor.PlayerRole.Hacker;
+            if (self)
+            {
+                // Match the existing transmission policy, including open voice during the queue.
+                if (microphoneMuted || ListenOnly || SpeechExhausted || service.IsInputDeviceMuted ||
+                    (PushToTalkRequired && !PushToTalkHeld)) return false;
+                transmitting = true;
+            }
+            else if (service.IsOutputDeviceMuted) return false;
+            if (service.ActiveChannels.TryGetValue(connectedChannel, out var people))
+                for (int i = 0; i < people.Count; i++)
+                    if (people[i].IsSelf == self) { participant = people[i]; break; }
+            return true;
         }
 
         private bool ReadTalkKey()
