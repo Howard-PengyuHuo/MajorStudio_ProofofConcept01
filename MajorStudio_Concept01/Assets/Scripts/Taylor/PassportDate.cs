@@ -53,11 +53,19 @@ namespace CarryOn.Taylor
         public static bool TryNormalizeCard(IdentityCard source, out IdentityCard result)
         {
             result = source;
-            if (!TryNormalize(source.Birthday, out var birthday)) return false;
+            if (!TryNormalizeBirthYear(source.Birthday, out var birthday)) return false;
             result.Birthday = birthday;
             result.IssueDate = IdentityCard.FixedIssueDate;
             result.ExpiryDate = IdentityCard.FixedExpiryDate;
             return true;
+        }
+
+        public static bool TryNormalizeBirthYear(string text, out string year)
+        {
+            year = text?.Trim();
+            if (year == null || year.Length != 4) return false;
+            foreach (char c in year) if (c < '0' || c > '9') return false;
+            return int.TryParse(year, out int number) && number > 0;
         }
 
         // Interview replies may contain a full sentence. Reject conflicting or ambiguous dates.

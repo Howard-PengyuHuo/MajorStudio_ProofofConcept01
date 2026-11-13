@@ -29,23 +29,27 @@ namespace Game.Multiplayer
         }
 
         [SerializeField] private GameObject content;
+        [SerializeField] private GameObject letterboxBackground;
         [SerializeField] private Image frameImage;
         [SerializeField] private ComicPanel[] comics;
         [SerializeField, Min(0.1f)] private float transitionDuration = 1.2f;
         [SerializeField] private CarouselRotationMode rotationMode = CarouselRotationMode.ComicOnly;
         [SerializeField, Min(0.1f)] private float selectionScaleDuration = 0.6f;
         [SerializeField] private Vector2 carouselRadius = new(1400, 420);
+        [SerializeField] private float readingVerticalOffset = 80;
         [SerializeField] private GameObject characterSelection;
         [SerializeField] private Button personButton, briefcaseButton, leaveButton;
         [SerializeField] private Image personMarker, briefcaseMarker;
         [SerializeField] private Sprite playerOneMarkerSprite, playerTwoMarkerSprite;
         [FormerlySerializedAs("statusText"), SerializeField] private Text narrationText;
         [SerializeField] private Text remainingTime;
+        [SerializeField] private Text navigationHint;
         [SerializeField] private Image stopwatchImage;
         [SerializeField] private UnityEvent<int> comicNarrationRequested = new();
         private LobbyRoleSelection selection;
         private uint requestedSequence;
         private bool hasRequestedNarration;
+        private int requestedComic = -1;
         private Vector2[] comicCenters;
         private Quaternion[] comicRotations;
         private Vector3[] comicScales;
@@ -55,6 +59,62 @@ namespace Game.Multiplayer
         private Vector2 mainFrameCenter;
         private Quaternion mainFrameRotation;
         private Vector3 mainFrameScale;
+        private uint localSequence;
+        private bool localAtSelection;
+        private double localSelectionStartedAt;
+        private int localPage = -1;
+        private int outgoingComic = -1;
+        private int turnDirection = 1;
+        private double localTurnStartedAt;
+
+        // Page position is per player. Role ownership and the start countdown remain shared.
+        private LobbyRoleState PresentationState()
+        {
+            var state = selection.Current;
+            if (state.Stage == SessionStage.Lobby || state.Stage == SessionStage.Gameplay)
+            {
+                localAtSelection = false;
+                localPage = -1;
+                return state;
+            }
+            if (!state.TryGetPlayer(selection.NetworkManager.LocalClientId, out var player)) return state;
+            if (localSequence != state.ComicSequence)
+            {
+                localSequence = state.ComicSequence;
+                localAtSelection = false;
+                localPage = -1;
+            }
+            if (localPage != player.CutscenePage)
+            {
+                int previous = localPage;
+                localPage = player.CutscenePage;
+                int target = Mathf.Clamp(localPage, 0, PanelCount - 1);
+                outgoingComic = previous >= 0 && Mathf.Clamp(previous, 0, PanelCount - 1) != target
+                    ? Mathf.Clamp(previous, 0, PanelCount - 1) : -1;
+                turnDirection = previous < 0 || localPage > previous ? 1 : -1;
+                localTurnStartedAt = outgoingComic >= 0 || previous < 0 ? selection.ServerNow : double.NegativeInfinity;
+            }
+            bool arrived = player.CutscenePage >= PanelCount;
+            if (arrived && !localAtSelection) localSelectionStartedAt = selection.ServerNow;
+            localAtSelection = arrived;
+            state.ComicIndex = Mathf.Clamp(player.CutscenePage, 0, PanelCount - 1);
+            state.NarrationSegmentIndex = 0;
+            state.Stage = !arrived ? SessionStage.ComicNarration :
+                selection.ServerNow - localSelectionStartedAt < SelectionScaleDuration
+                    ? SessionStage.SelectionEntering : SessionStage.CharacterSelection;
+            if (!arrived && selection.ServerNow - localTurnStartedAt < TransitionDuration)
+            {
+                state.Stage = SessionStage.ComicEntering;
+                state.StageStartedAt = localTurnStartedAt;
+                state.StageEndsAt = localTurnStartedAt + TransitionDuration;
+            }
+            if (arrived)
+            {
+                state.StageStartedAt = localSelectionStartedAt;
+                state.StageEndsAt = localSelectionStartedAt + SelectionScaleDuration;
+            }
+            return state;
+        }
 
         // Future asynchronous narration must capture the supplied sequence, not read Current later.
         public event Action<int, uint> NarrationRequested;
@@ -72,6 +132,16 @@ namespace Game.Multiplayer
         public void Bind(LobbyRoleSelection owner)
         {
             selection = owner;
+            CacheAuthoredLayout();
+            selection.Changed += Refresh;
+            personButton.onClick.AddListener(SelectPerson);
+            briefcaseButton.onClick.AddListener(SelectBriefcase);
+            leaveButton.onClick.AddListener(Leave);
+            Refresh();
+        }
+
+        private void CacheAuthoredLayout()
+        {
             comicCenters = new Vector2[PanelCount];
             comicRotations = new Quaternion[PanelCount];
             comicScales = new Vector3[PanelCount];
@@ -94,11 +164,37 @@ namespace Game.Multiplayer
                     frameScales[i] = frame.localScale;
                 }
             }
-            selection.Changed += Refresh;
-            personButton.onClick.AddListener(SelectPerson);
-            briefcaseButton.onClick.AddListener(SelectBriefcase);
-            leaveButton.onClick.AddListener(Leave);
-            Refresh();
+        }
+
+        // Used only by the standalone preview scene; shares the game's actual animation.
+        public void InitializePreview() => CacheAuthoredLayout();
+
+        public void RenderPreview(int page, int previous, int direction, double startedAt)
+        {
+            double now = Time.unscaledTimeAsDouble;
+            bool selecting = page >= PanelCount;
+            float duration = selecting ? SelectionScaleDuration : TransitionDuration;
+            var state = new LobbyRoleState
+            {
+                ComicIndex = Mathf.Clamp(page, 0, PanelCount - 1),
+                Stage = selecting
+                    ? (now - startedAt < duration ? SessionStage.SelectionEntering : SessionStage.CharacterSelection)
+                    : (now - startedAt < duration ? SessionStage.ComicEntering : SessionStage.ComicNarration),
+                StageStartedAt = startedAt, StageEndsAt = startedAt + duration
+            };
+            outgoingComic = previous >= 0 && previous != state.ComicIndex ? Mathf.Min(previous, PanelCount - 1) : -1;
+            turnDirection = direction;
+            SetStageVisibility(state.Stage);
+            personButton.interactable = briefcaseButton.interactable = false;
+            leaveButton.gameObject.SetActive(false);
+            personMarker.gameObject.SetActive(false);
+            briefcaseMarker.gameObject.SetActive(false);
+            if (navigationHint != null)
+            {
+                navigationHint.gameObject.SetActive(true);
+                navigationHint.text = "USE LEFT/RIGHT ARROW KEY TO SWITCH";
+            }
+            RenderVisuals(state, now);
         }
 
         private void SelectPerson() => Toggle(LobbyRole.Traveler);
@@ -116,13 +212,20 @@ namespace Game.Multiplayer
         private void Update()
         {
             if (selection == null || !selection.IsSpawned) return;
-            RefreshVisuals();
-            var state = selection.Current;
+            var keyboard = UnityEngine.InputSystem.Keyboard.current;
+            if (keyboard != null)
+            {
+                if (keyboard.leftArrowKey.wasPressedThisFrame) selection.NavigateCutscene(-1);
+                else if (keyboard.rightArrowKey.wasPressedThisFrame) selection.NavigateCutscene(1);
+            }
+            Refresh();
+            var state = PresentationState();
             if (state.Stage == SessionStage.ComicNarration &&
-                (!hasRequestedNarration || requestedSequence != state.ComicSequence))
+                (!hasRequestedNarration || requestedSequence != state.ComicSequence || requestedComic != state.ComicIndex))
             {
                 hasRequestedNarration = true;
                 requestedSequence = state.ComicSequence;
+                requestedComic = state.ComicIndex;
                 // Entering is already complete on the server; snap the center pose before requesting text/audio.
                 OnComicNarrationRequested(state.ComicIndex);
             }
@@ -130,8 +233,9 @@ namespace Game.Multiplayer
 
         public void OnComicNarrationRequested(int comicIndex)
         {
-            if (selection == null || selection.Current.Stage != SessionStage.ComicNarration ||
-                selection.Current.ComicIndex != comicIndex) return;
+            if (selection == null) return;
+            var state = PresentationState();
+            if (state.Stage != SessionStage.ComicNarration || state.ComicIndex != comicIndex) return;
             uint sequence = selection.Current.ComicSequence;
             // Optional presentation hooks only; these do not advance the authoritative segment clock.
             comicNarrationRequested.Invoke(comicIndex);
@@ -144,16 +248,32 @@ namespace Game.Multiplayer
         private void Refresh()
         {
             if (selection == null || !selection.IsSpawned) return;
-            var state = selection.Current;
-            content.SetActive(state.Stage != SessionStage.Lobby && state.Stage != SessionStage.Gameplay);
-            characterSelection.SetActive(state.Stage == SessionStage.CharacterSelection);
-            bool canSelect = state.Stage == SessionStage.CharacterSelection && !selection.HasPendingRequest &&
+            var state = PresentationState();
+            SetStageVisibility(state.Stage);
+            bool canSelect = state.Stage == SessionStage.CharacterSelection &&
+                selection.Current.Stage == SessionStage.CharacterSelection && !selection.HasPendingRequest &&
                 selection.TryGetLocalPlayer(out _);
             personButton.interactable = canSelect && !state.IsOccupied(LobbyRole.Traveler, selection.NetworkManager.LocalClientId);
             briefcaseButton.interactable = canSelect && !state.IsOccupied(LobbyRole.Hacker, selection.NetworkManager.LocalClientId);
             RefreshMarker(personMarker, state, LobbyRole.Traveler);
             RefreshMarker(briefcaseMarker, state, LobbyRole.Hacker);
+            if (navigationHint != null)
+            {
+                bool reading = selection.Current.Stage == SessionStage.ComicNarration;
+                navigationHint.gameObject.SetActive(reading);
+                navigationHint.text = localAtSelection
+                    ? "WAITING FOR THE OTHER PLAYER. LEFT ARROW TO GO BACK."
+                    : "USE LEFT / RIGHT ARROW KEYS TO SWITCH";
+            }
             RefreshVisuals();
+        }
+
+        private void SetStageVisibility(SessionStage stage)
+        {
+            bool showCutscene = stage != SessionStage.Lobby && stage != SessionStage.Gameplay;
+            content.SetActive(showCutscene);
+            if (letterboxBackground != null) letterboxBackground.SetActive(showCutscene);
+            characterSelection.SetActive(stage == SessionStage.CharacterSelection);
         }
 
         private void RefreshMarker(Image marker, LobbyRoleState state, LobbyRole role)
@@ -167,9 +287,14 @@ namespace Game.Multiplayer
 
         private void RefreshVisuals()
         {
-            var state = selection.Current;
+            var state = PresentationState();
+            RenderVisuals(state, selection.ServerNow);
+        }
+
+        private void RenderVisuals(LobbyRoleState state, double now)
+        {
             bool entering = state.Stage == SessionStage.ComicEntering;
-            float progress = entering ? Mathf.Clamp01((float)((selection.ServerNow - state.StageStartedAt) /
+            float progress = entering ? Mathf.Clamp01((float)((now - state.StageStartedAt) /
                 Math.Max(0.001, state.StageEndsAt - state.StageStartedAt))) : 1;
             float eased = Mathf.SmoothStep(0, 1, progress);
             if (rotationMode == CarouselRotationMode.ComicAndFrame)
@@ -178,7 +303,7 @@ namespace Game.Multiplayer
 
             bool selecting = state.Stage is SessionStage.SelectionEntering or SessionStage.CharacterSelection;
             float selectionProgress = state.Stage == SessionStage.CharacterSelection ? 1 : selecting
-                ? Mathf.Clamp01((float)((selection.ServerNow - state.StageStartedAt) /
+                ? Mathf.Clamp01((float)((now - state.StageStartedAt) /
                     Math.Max(0.001, state.StageEndsAt - state.StageStartedAt))) : 0;
             if (selecting)
             {
@@ -186,17 +311,32 @@ namespace Game.Multiplayer
                 comics[PanelCount - 1].image.rectTransform.localScale = Vector3.Lerp(comicScales[PanelCount - 1], Vector3.one, scaleEase);
                 FrameRectTransform.localScale = Vector3.Lerp(mainFrameScale, Vector3.one, scaleEase);
             }
+            // Move the whole illustrated pair up while reading, then settle back for selection.
+            float readingOffset = state.Stage is SessionStage.Lobby or SessionStage.Gameplay ? 0 :
+                readingVerticalOffset * (1 - Mathf.SmoothStep(0, 1, selectionProgress));
+            for (int i = 0; i < PanelCount; i++)
+            {
+                if (comics[i].image.gameObject.activeSelf)
+                    comics[i].image.rectTransform.anchoredPosition += Vector2.up * readingOffset;
+                if (comics[i].rotatingFrame != null)
+                    comics[i].rotatingFrame.rectTransform.anchoredPosition += Vector2.up * readingOffset;
+            }
+            if (rotationMode == CarouselRotationMode.ComicOnly)
+                FrameRectTransform.anchoredPosition += Vector2.up * readingOffset;
 
             // Render the latest replicated segment, never run a second local progression timer.
             bool showNarration = state.Stage is SessionStage.ComicNarration or SessionStage.ComicHold;
             string text = showNarration && state.ComicIndex >= 0 && state.ComicIndex < PanelCount &&
                 state.NarrationSegmentIndex >= 0 && state.NarrationSegmentIndex < SegmentCount(state.ComicIndex)
                 ? comics[state.ComicIndex].narration[state.NarrationSegmentIndex].text : string.Empty;
-            if (narrationText.text != text) narrationText.text = text;
-            narrationText.gameObject.SetActive(showNarration);
+            if (narrationText != null)
+            {
+                if (narrationText.text != text) narrationText.text = text;
+                narrationText.gameObject.SetActive(showNarration);
+            }
             stopwatchImage.gameObject.SetActive(state.Stage == SessionStage.CharacterSelection && state.CountdownActive);
             remainingTime.text = state.CountdownActive
-                ? Math.Ceiling(Math.Max(0, state.CountdownEndsAt - selection.ServerNow)).ToString("0") : string.Empty;
+                ? Math.Ceiling(Math.Max(0, state.CountdownEndsAt - now)).ToString("0") : string.Empty;
         }
 
         private void AnimateComicOnlyRotation(LobbyRoleState state, bool entering, float eased)
@@ -213,7 +353,7 @@ namespace Game.Multiplayer
             AnimateComics(state, entering, eased, true);
             // Farther pair first, nearer pair last; each frame immediately precedes its comic.
             int incoming = Mathf.Clamp(state.ComicIndex, 0, PanelCount - 1);
-            int outgoing = entering ? incoming - 1 : -1;
+            int outgoing = entering ? outgoingComic : -1;
             if (outgoing >= 0 && eased < 0.5f) { OrderPair(incoming); OrderPair(outgoing); }
             else { if (outgoing >= 0) OrderPair(outgoing); OrderPair(incoming); }
         }
@@ -221,9 +361,11 @@ namespace Game.Multiplayer
         private void OrderPair(int index)
         {
             // Insert before narration/selection, never above those controls.
-            int slot = Mathf.Min(narrationText.transform.GetSiblingIndex(), characterSelection.transform.GetSiblingIndex());
+            int narrationSlot = narrationText != null ? narrationText.transform.GetSiblingIndex() : int.MaxValue;
+            int slot = Mathf.Min(narrationSlot, characterSelection.transform.GetSiblingIndex());
             if (comics[index].rotatingFrame != null) comics[index].rotatingFrame.transform.SetSiblingIndex(slot - 1);
-            comics[index].image.transform.SetSiblingIndex(Mathf.Min(narrationText.transform.GetSiblingIndex(),
+            narrationSlot = narrationText != null ? narrationText.transform.GetSiblingIndex() : int.MaxValue;
+            comics[index].image.transform.SetSiblingIndex(Mathf.Min(narrationSlot,
                 characterSelection.transform.GetSiblingIndex()) - 1);
         }
 
@@ -249,13 +391,13 @@ namespace Game.Multiplayer
             for (int i = 0; i < PanelCount; i++)
             {
                 bool incoming = i == state.ComicIndex;
-                bool outgoing = entering && i == state.ComicIndex - 1;
+                bool outgoing = entering && i == outgoingComic;
                 var image = comics[i].image;
                 image.rectTransform.localScale = comicScales[i];
                 image.gameObject.SetActive(incoming || outgoing);
                 if (!incoming && !outgoing) continue;
                 // Cards turn along a quarter ellipse: incoming right -> center; outgoing center -> left.
-                float angle = incoming ? (1 - eased) * Mathf.PI / 2 : -eased * Mathf.PI / 2;
+                float angle = (incoming ? (1 - eased) : -eased) * Mathf.PI / 2 * turnDirection;
                 image.rectTransform.anchoredPosition = comicCenters[i] + new Vector2(
                     Mathf.Sin(angle) * carouselRadius.x, (Mathf.Cos(angle) - 1) * carouselRadius.y);
                 image.rectTransform.localRotation = comicRotations[i] * Quaternion.Euler(0, 0, -angle * Mathf.Rad2Deg * 0.25f);

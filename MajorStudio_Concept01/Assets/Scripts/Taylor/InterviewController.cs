@@ -9,10 +9,15 @@ namespace CarryOn.Taylor
     public enum AnswerSource { FixedAnswer, ForgedName, ForgedBirthPlace, ForgedIssueDate, ForgedExpiryDate, ForgedPassportCode, ForgedBirthday,
         GovernmentName, GovernmentNationality, GovernmentPosition, GovernmentTaskCategory, AnyNonEmpty }
 
+    public enum InterviewTopic { Name, Nationality, VisitPurpose, StayDuration, Belongings, GovernmentRole, RoleDuties, Accommodation,
+        TravelCompanions, ArrivalRoute, VisitActivity, StayPlans, ItemUse, AccommodationPlan, PromisedDignity, HeavenlyFatherName, DivineRetribution }
+
     [Serializable]
     public class InterviewQuestion
     {
         [TextArea(2, 4)] public string question;
+        [Tooltip("AI can rephrase this topic, but cannot choose a different subject.")]
+        public InterviewTopic topic;
         public AnswerSource answerSource;
         [Tooltip("Used only when Answer Source is Fixed Answer.")]
         public string answer;
@@ -37,22 +42,24 @@ namespace CarryOn.Taylor
         public bool DocumentMismatch { get; private set; }
         [SerializeField] private InterviewQuestion[] questions =
         {
-            new InterviewQuestion { question = "What is your name, sir?", answerSource = AnswerSource.ForgedName },
-            new InterviewQuestion { question = "Where are you coming from?", answerSource = AnswerSource.GovernmentNationality },
-            new InterviewQuestion { question = "What is the intention of your trip? Any plans for how you’re going to spend your time here?", answerSource = AnswerSource.GovernmentTaskCategory },
-            new InterviewQuestion { question = "How long are you planning to stay here?", answerSource = AnswerSource.AnyNonEmpty },
-            new InterviewQuestion { question = "What belongings are you bringing with you?", answerSource = AnswerSource.AnyNonEmpty }
+            new InterviewQuestion { question = "What is your name, sir?", topic = InterviewTopic.Name, answerSource = AnswerSource.ForgedName },
+            new InterviewQuestion { question = "Where are you coming from?", topic = InterviewTopic.Nationality, answerSource = AnswerSource.GovernmentNationality },
+            new InterviewQuestion { question = "What is the intention of your trip? Any plans for how you’re going to spend your time here?", topic = InterviewTopic.VisitPurpose, answerSource = AnswerSource.GovernmentTaskCategory },
+            new InterviewQuestion { question = "How long are you planning to stay here?", topic = InterviewTopic.StayDuration, answerSource = AnswerSource.AnyNonEmpty },
+            new InterviewQuestion { question = "What belongings are you bringing with you?", topic = InterviewTopic.Belongings, answerSource = AnswerSource.AnyNonEmpty }
         };
         [SerializeField] private string successMessage = "ENTRY APPROVED";
         [SerializeField] private string failureMessage = "ENTRY DENIED";
-        [Header("Reputation")]
-        [SerializeField, Min(1)] private int startingReputation = 50;
-        [SerializeField, Min(1)] private int shakePenalty = 20;
+        [Header("Wrong answers")]
+        [SerializeField, Min(1)] private int maximumWrongAnswers = 3;
         [SerializeField] private TMP_Text reputationText;
         [SerializeField] private UnityEngine.UI.Button shakeButton;
         [SerializeField] private UnityEvent onShakeRequested = new UnityEvent();
         [Header("Shared result panel")]
         [SerializeField] private GameObject gameOverPanel;
+        [SerializeField] private UnityEngine.UI.Image resultImage;
+        [SerializeField] private Sprite successSprite, failureSprite;
+        [SerializeField] private UnityEngine.UI.Button restartButton;
         [SerializeField] private TMP_Text resultText, reasonText;
         [SerializeField] private string successReason = "Have a great time during your stay. Live with DIGNITY.";
         [SerializeField] private string wrongAnswerReason = "Your answer does not match the required information.";
@@ -63,16 +70,25 @@ namespace CarryOn.Taylor
         public bool EntryApproved { get; private set; }
         public int QuestionIndex { get; private set; }
         public int Reputation { get; private set; }
+        public int AcceptedAnswerCount { get; private set; }
         public string ResultReason { get; private set; } = string.Empty;
         public event Action Finished;
         public event Action Changed;
         public event Action<int, string> AnswerRequested;
         public event Action ShakeRequested;
         public event Action ShakePresented;
+        public event Action RestartRequested;
+
+        public void RestartGame()
+        {
+            if (!IsFinished) return;
+            if (networkMode) RestartRequested?.Invoke();
+            else if (session != null) session.BeginPreparation(session.PreparationSeconds);
+        }
         public string CurrentQuestion => started && !IsFinished && questions != null &&
-            QuestionIndex >= 0 && QuestionIndex < questions.Length ?
-            (IsShowingIntroduction ? introduction : DocumentMismatch ? discrepancyQuestion : ReviewingPurpose ? "Reviewing your answer..." :
-             !string.IsNullOrEmpty(PurposeLine) ? PurposeLine : questions[QuestionIndex].question) : string.Empty;
+            QuestionIndex >= 0 && QuestionIndex < ActiveQuestions.Length ?
+            (IsExplainingDenial ? ResultReason : IsShowingIntroduction ? introduction : DocumentMismatch ? discrepancyQuestion : ReviewingPurpose ? "Reviewing your answer..." :
+             !string.IsNullOrEmpty(PurposeLine) ? PurposeLine : ActiveQuestion.question) : string.Empty;
         private bool networkMode;
         private bool networkAuthority;
         private bool localInputAllowed = true;
@@ -92,6 +108,11 @@ namespace CarryOn.Taylor
 
         private void Update()
         {
+            if (IsExplainingDenial && (!networkMode || networkAuthority) && Clock >= DenialEndsAt)
+            {
+                CompleteFinish(EntryApproved, ResultReason);
+                PurposeResolved?.Invoke();
+            }
             if (showingIntroduction != IsShowingIntroduction)
             {
                 RefreshQuestionPresentation();
@@ -104,7 +125,7 @@ namespace CarryOn.Taylor
         public bool ExpireQuestion()
         {
             if (networkMode && !networkAuthority) return false;
-            if (!QuestionTimerRunning || Clock < QuestionEndsAt) return false;
+            if (IsExplainingDenial || !QuestionTimerRunning || Clock < QuestionEndsAt) return false;
             Finish(false, "You did not answer the question in time.");
             return true;
         }
@@ -126,8 +147,9 @@ namespace CarryOn.Taylor
             }
             if (answerInput != null) answerInput.onSubmit.AddListener(SubmitAnswer);
             if (shakeButton != null) shakeButton.onClick.AddListener(Shake);
+            if (restartButton != null) restartButton.onClick.AddListener(RestartGame);
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
-            Reputation = Mathf.Max(1, startingReputation);
+            Reputation = Mathf.Max(1, maximumWrongAnswers);
             RefreshReputation();
         }
 
@@ -141,6 +163,7 @@ namespace CarryOn.Taylor
             }
             if (answerInput != null) answerInput.onSubmit.RemoveListener(SubmitAnswer);
             if (shakeButton != null) shakeButton.onClick.RemoveListener(Shake);
+            if (restartButton != null) restartButton.onClick.RemoveListener(RestartGame);
         }
 
         private void ResetForPreparation()
@@ -159,7 +182,7 @@ namespace CarryOn.Taylor
             QuestionIndex = 0;
             lastSubmitFrame = -1;
             if (answerInput != null) answerInput.SetTextWithoutNotify(string.Empty);
-            Reputation = Mathf.Max(1, startingReputation);
+            Reputation = Mathf.Max(1, maximumWrongAnswers);
             RefreshReputation();
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             if (shakeButton != null) shakeButton.interactable = false;
@@ -167,6 +190,7 @@ namespace CarryOn.Taylor
 
         public void BeginInterview(IdentityCard card)
         {
+            EnsureInterviewPlan();
             identity = card;
             var permit = session.HasPrintedGovernment ? session.PrintedGovernment : session.Government;
             DocumentMismatch = Conflicts(card.Nationality, permit.Nationality) || Conflicts(card.Name, permit.Name);
@@ -178,11 +202,11 @@ namespace CarryOn.Taylor
             IntroductionEndsAt = !networkMode || networkAuthority
                 ? Clock + (string.IsNullOrWhiteSpace(introduction) ? 0 : introductionSeconds) : 0;
             lastSubmitFrame = -1;
-            Reputation = Mathf.Max(1, startingReputation);
+            Reputation = Mathf.Max(1, maximumWrongAnswers);
             RefreshReputation();
             if (gameOverPanel != null) gameOverPanel.SetActive(false);
             if (shakeButton != null) shakeButton.interactable = true;
-            if (questions == null || questions.Length == 0 || questionText == null || answerInput == null)
+            if (questions == null || ActiveQuestions.Length == 0 || questionText == null || answerInput == null)
             {
                 started = false;
                 Debug.LogError("InterviewController: assign questions, Question Text and Answer Input in the Inspector.", this);
@@ -194,10 +218,10 @@ namespace CarryOn.Taylor
         // TMP onSubmit is Enter; onEndEdit is deliberately not used (clicking away must not submit).
         public void SubmitAnswer(string value)
         {
-            if (ReviewingPurpose || !localInputAllowed || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview ||
+            if (IsExplainingDenial || ReviewingPurpose || !localInputAllowed || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview ||
                 !answerInput.gameObject.activeInHierarchy || lastSubmitFrame == Time.frameCount) return;
             if (string.IsNullOrWhiteSpace(value)) { FocusAnswer(); return; }
-            if (!useOllama && !DocumentMismatch && UsesDate(questions[QuestionIndex]) && !PassportDate.TryExtract(value, out _))
+            if (!useOllama && !DocumentMismatch && UsesDate(ActiveQuestion) && !PassportDate.TryExtract(value, out _))
             {
                 ShowDateHint();
                 FocusAnswer();
@@ -216,12 +240,12 @@ namespace CarryOn.Taylor
         public bool EvaluateAnswer(string value)
         {
             if (networkMode && !networkAuthority) return false;
-            if (ReviewingPurpose) return false;
+            if (IsExplainingDenial || ReviewingPurpose) return false;
             if (ExpireQuestion()) return true;
             if (!started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview ||
                 string.IsNullOrWhiteSpace(value) || questions == null ||
-                QuestionIndex < 0 || QuestionIndex >= questions.Length) return false;
-            var current = questions[QuestionIndex];
+                QuestionIndex < 0 || QuestionIndex >= ActiveQuestions.Length) return false;
+            var current = ActiveQuestion;
             if (DocumentMismatch)
             {
                 Finish(false, discrepancyReason);
@@ -244,7 +268,10 @@ namespace CarryOn.Taylor
                 current.answerSource == AnswerSource.GovernmentPosition ? government.Position :
                 current.answerSource == AnswerSource.GovernmentTaskCategory ? GovernmentDocument.CategoryLabel(government.Category) : current.answer;
             bool matches;
-            if (UsesDate(current))
+            if (current.answerSource == AnswerSource.ForgedBirthday)
+                matches = PassportDate.TryNormalizeBirthYear(expected, out var birthYear) &&
+                    System.Text.RegularExpressions.Regex.IsMatch(value, @"(?<!\d)" + birthYear + @"(?!\d)");
+            else if (UsesDate(current))
             {
                 if (!PassportDate.TryExtract(value, out var submittedDate))
                 {
@@ -258,18 +285,21 @@ namespace CarryOn.Taylor
                     NormalizeAnswer(expected), StringComparison.OrdinalIgnoreCase) >= 0);
             if (!matches)
             {
-                Finish(false, wrongAnswerReason);
+                if (!RegisterWrongAnswer()) ShowQuestion();
                 return true;
             }
+            AcceptedAnswerCount++;
             AdvanceQuestion();
             return true;
         }
 
         private void AdvanceQuestion()
         {
+            extensionQuestion = null;
+            followupParentAnswer = "";
             PurposeLine = "";
             QuestionIndex++;
-            if (QuestionIndex >= questions.Length) Finish(true, successReason);
+            if (QuestionIndex >= ActiveQuestions.Length) Finish(true, successReason);
             else ShowQuestion();
             Changed?.Invoke();
         }
@@ -283,7 +313,6 @@ namespace CarryOn.Taylor
             !string.Equals(NormalizeAnswer(first), NormalizeAnswer(second), StringComparison.OrdinalIgnoreCase);
 
         private static bool UsesDate(InterviewQuestion question) =>
-            question.answerSource == AnswerSource.ForgedBirthday ||
             question.answerSource == AnswerSource.ForgedIssueDate ||
             question.answerSource == AnswerSource.ForgedExpiryDate ||
             (question.answerSource == AnswerSource.FixedAnswer && question.dateAnswer);
@@ -291,7 +320,7 @@ namespace CarryOn.Taylor
         private void ShowDateHint()
         {
             if (questionText != null)
-                questionText.text = questions[QuestionIndex].question + "\n" + PassportDate.Hint;
+                questionText.text = ActiveQuestion.question + "\n" + PassportDate.Hint;
         }
 
         private void ShowQuestion()
@@ -305,9 +334,9 @@ namespace CarryOn.Taylor
                 return;
             }
             if ((!networkMode || networkAuthority) && useOllama && !DocumentMismatch && string.IsNullOrEmpty(PurposeLine))
-                PurposeLine = preparedLines != null && preparedLines[QuestionIndex] != null ? preparedLines[QuestionIndex] : questions[QuestionIndex].question;
+                PurposeLine = preparedLines != null && preparedLines[QuestionIndex] != null ? preparedLines[QuestionIndex] : ActiveQuestion.question;
             if (!networkMode || networkAuthority)
-                QuestionEndsAt = Math.Max(Clock, QuestionIndex == 0 ? IntroductionEndsAt : 0) + Mathf.Max(0.1f, questions[QuestionIndex].timeLimitSeconds);
+                QuestionEndsAt = Math.Max(Clock, QuestionIndex == 0 ? IntroductionEndsAt : 0) + Mathf.Max(0.1f, ActiveQuestion.timeLimitSeconds);
             RefreshQuestionPresentation();
             answerInput.SetTextWithoutNotify("");
             FocusAnswer();
@@ -318,8 +347,8 @@ namespace CarryOn.Taylor
             showingIntroduction = IsShowingIntroduction;
             if (!started || IsFinished) return;
             if (questionText != null) questionText.text = CurrentQuestion;
-            if (answerInput != null) answerInput.interactable = localInputAllowed && !showingIntroduction && !ReviewingPurpose;
-            if (shakeButton != null) shakeButton.interactable = localInputAllowed && !showingIntroduction && !ReviewingPurpose;
+            if (answerInput != null) answerInput.interactable = localInputAllowed && !showingIntroduction && !ReviewingPurpose && !IsExplainingDenial;
+            if (shakeButton != null) shakeButton.interactable = localInputAllowed && !showingIntroduction && !ReviewingPurpose && !IsExplainingDenial;
         }
 
         public void FocusAnswer()
@@ -349,17 +378,27 @@ namespace CarryOn.Taylor
         public bool ApplyShake()
         {
             if (networkMode && !networkAuthority) return false;
-            if (ReviewingPurpose || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview) return false;
-            Reputation = Mathf.Max(0, Reputation - Mathf.Max(1, shakePenalty));
-            RefreshReputation();
-            ReputationDropped?.Invoke();
+            if (IsExplainingDenial || ReviewingPurpose || !started || IsFinished || IsShowingIntroduction || session.Phase != EntryPhase.Interview) return false;
             if (!networkMode) NotifyNetworkShake();
-            if (Reputation == 0) Finish(false, reputationFailureReason);
-            else FocusAnswer();
+            FocusAnswer();
             Changed?.Invoke();
             return true;
         }
 
+        // Reputation is the remaining mistake allowance, replicated by the existing bridge.
+        // Returns true when the closing line has started and no further question may be shown.
+        private bool RegisterWrongAnswer()
+        {
+            if (IsFinished || IsExplainingDenial || (networkMode && !networkAuthority)) return true;
+            Reputation = Mathf.Max(0, Reputation - 1);
+            RefreshReputation();
+            ReputationDropped?.Invoke();
+            if (Reputation == 0)
+                Finish(false, "YOUR ANSWERS HAVE FAILED OUR INSPECTION. ENTRY IS DENIED. STEP AWAY FROM THE COUNTER.");
+            Changed?.Invoke();
+            PurposeResolved?.Invoke();
+            return IsExplainingDenial;
+        }
         // Presentation only. The adapter calls this once per replicated help-request sequence.
         public void NotifyNetworkShake()
         {
@@ -369,12 +408,17 @@ namespace CarryOn.Taylor
 
         public void ApplyNetworkSnapshot(int questionIndex, int reputation, bool finished,
             bool approved, string reason, double questionEndsAt = 0, double introductionEndsAt = 0, bool documentMismatch = false,
-            string purposeLine = "", bool reviewingPurpose = false)
+            string purposeLine = "", bool reviewingPurpose = false, double denialEndsAt = 0, string lastSubmittedAnswer = "", int acceptedAnswerCount = 0)
         {
             if (!networkMode) return;
+            if (!networkAuthority) AcceptedAnswerCount = acceptedAnswerCount;
+            DenialEndsAt = denialEndsAt;
+            ResultReason = reason ?? "";
+            EntryApproved = approved;
             bool questionChanged = QuestionIndex != questionIndex || PurposeLine != (purposeLine ?? "") || (ReviewingPurpose && !reviewingPurpose);
             PurposeLine = purposeLine ?? "";
             ReviewingPurpose = reviewingPurpose;
+            LastSubmittedAnswer = lastSubmittedAnswer ?? "";
             if (!networkAuthority && reputation < Reputation) ReputationDropped?.Invoke();
             QuestionIndex = questionIndex;
             IntroductionEndsAt = introductionEndsAt;
@@ -383,13 +427,13 @@ namespace CarryOn.Taylor
             RefreshReputation();
             if (finished)
             {
-                Finish(approved, reason);
+                CompleteFinish(approved, reason);
                 return;
             }
-            if (started && !IsFinished && questionChanged) ShowQuestion();
+            if (started && !IsFinished && !IsExplainingDenial && questionChanged) ShowQuestion();
             QuestionEndsAt = questionEndsAt;
             RefreshQuestionPresentation();
-            if (shakeButton != null) shakeButton.interactable = localInputAllowed && started && !IsFinished && !IsShowingIntroduction && !ReviewingPurpose;
+            if (shakeButton != null) shakeButton.interactable = localInputAllowed && started && !IsFinished && !IsShowingIntroduction && !ReviewingPurpose && !IsExplainingDenial;
         }
 
         private void RefreshReputation()
@@ -398,6 +442,19 @@ namespace CarryOn.Taylor
         }
 
         private void Finish(bool approved, string reason)
+        {
+            if (IsFinished || IsExplainingDenial) return;
+            EntryApproved = approved;
+            ResultReason = reason ?? "Entry denied.";
+            QuestionEndsAt = 0;
+            ReviewingPurpose = false;
+            DenialEndsAt = Clock + Mathf.Clamp(ResultReason.Split(' ').Length / 2.5f, 5f, 10f);
+            RefreshQuestionPresentation();
+            Changed?.Invoke();
+            PurposeResolved?.Invoke();
+        }
+
+        private void CompleteFinish(bool approved, string reason)
         {
             if (IsFinished) return;
             IsFinished = true;
@@ -408,6 +465,7 @@ namespace CarryOn.Taylor
             if (shakeButton != null) shakeButton.interactable = false;
             if (resultText != null) resultText.text = approved ? successMessage : failureMessage;
             if (reasonText != null) reasonText.text = reason;
+            if (resultImage != null) resultImage.sprite = approved ? successSprite : failureSprite;
             if (gameOverPanel != null)
             {
                 gameOverPanel.transform.SetAsLastSibling();

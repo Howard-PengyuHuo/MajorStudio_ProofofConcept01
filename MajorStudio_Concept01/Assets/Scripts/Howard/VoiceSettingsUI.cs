@@ -12,6 +12,8 @@ namespace Game.Multiplayer
     {
         [SerializeField] private GameObject panel;
         [SerializeField] private UnityEngine.UI.Button openButton, closeButton, refreshButton;
+        [SerializeField] private UnityEngine.UI.Button lobbyOpenButton;
+        [SerializeField] private GameObject mainMenuPanel;
         [SerializeField] private TMP_Dropdown inputDevice, outputDevice;
         [SerializeField] private UnityEngine.UI.Slider inputVolume, outputVolume, teammateVolume;
         [SerializeField] private TMP_Text status, inputValue, outputValue, teammateValue;
@@ -24,6 +26,7 @@ namespace Game.Multiplayer
         {
             voice = FindAnyObjectByType<VoiceChatManager>();
             openButton.onClick.AddListener(Open);
+            if (lobbyOpenButton != null) lobbyOpenButton.onClick.AddListener(Open);
             closeButton.onClick.AddListener(Close);
             refreshButton.onClick.AddListener(RefreshDevices);
             inputDevice.onValueChanged.AddListener(SelectInput);
@@ -32,7 +35,12 @@ namespace Game.Multiplayer
             outputVolume.onValueChanged.AddListener(OutputVolume);
             teammateVolume.onValueChanged.AddListener(TeammateVolume);
             panel.SetActive(false);
-            if (voice == null) { openButton.interactable = false; return; }
+            if (voice == null)
+            {
+                openButton.interactable = false;
+                if (lobbyOpenButton != null) lobbyOpenButton.interactable = false;
+                return;
+            }
             inputVolume.SetValueWithoutNotify(voice.InputVolume);
             outputVolume.SetValueWithoutNotify(voice.OutputVolume);
             teammateVolume.SetValueWithoutNotify(voice.TeammateVolume);
@@ -40,6 +48,13 @@ namespace Game.Multiplayer
         }
 
         private void Open() { panel.SetActive(true); RefreshDevices(); }
+        private void LateUpdate()
+        {
+            // Preserve the main-menu button's authored position; the lobby has its own artwork hotspot.
+            if (mainMenuPanel != null && openButton != null &&
+                openButton.gameObject.activeSelf != mainMenuPanel.activeInHierarchy)
+                openButton.gameObject.SetActive(mainMenuPanel.activeInHierarchy);
+        }
         private void Close() => panel.SetActive(false);
         private void OnDisable() { if (panel != null) panel.SetActive(false); }
 

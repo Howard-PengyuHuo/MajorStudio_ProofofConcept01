@@ -20,17 +20,20 @@ namespace CarryOn.Taylor
         [SerializeField] private UnityEngine.UI.Button[] categoryButtons;
         [SerializeField] private UnityEngine.UI.Image[] categoryCircles;
         [SerializeField] private AudioSource printAudioSource;
+        [SerializeField] private GameObject printedStamp;
         private readonly Dictionary<TMP_InputField, string> pending = new();
         private UnityAction[] categoryClicks;
         private TaskCategory? pendingCategory;
         private bool queued, sent, wasPrinted;
         private int lastSubmitFrame = -1;
         private TMP_InputField[] inputs;
+        private Transform PrintRoot => document != null ? document.transform : null;
         private TMP_InputField[] Inputs => inputs ??= new[] { nameInput, nationalityInput, positionInput };
 
         private void OnEnable()
         {
             if (session == null) return;
+            if (mode == ViewMode.HackerEditor) DocumentPrintTarget.Register(PrintRoot);
             queued = sent = false;
             pending.Clear(); pendingCategory = null;
             wasPrinted = session.HasPrintedGovernment;
@@ -54,6 +57,7 @@ namespace CarryOn.Taylor
 
         private void OnDisable()
         {
+            if (mode == ViewMode.HackerEditor) DocumentPrintTarget.Unregister(PrintRoot);
             if (session != null) session.Changed -= Refresh;
             nameInput?.onValueChanged.RemoveListener(EditName);
             nationalityInput?.onValueChanged.RemoveListener(EditNationality);
@@ -66,10 +70,8 @@ namespace CarryOn.Taylor
 
         private void Update()
         {
-            if (mode != ViewMode.HackerEditor || Keyboard.current == null || EventSystem.current == null) return;
-            if (!Keyboard.current.enterKey.wasPressedThisFrame && !Keyboard.current.numpadEnterKey.wasPressedThisFrame) return;
-            foreach (var button in categoryButtons)
-                if (button != null && EventSystem.current.currentSelectedGameObject == button.gameObject) { Submit(""); break; }
+            if (mode == ViewMode.HackerEditor && DocumentPrintTarget.EnterPressed && DocumentPrintTarget.IsTarget(PrintRoot))
+                Submit("");
         }
 
         private void EditName(string value) => Edit(nameInput, GovernmentField.Name, value);
@@ -91,6 +93,7 @@ namespace CarryOn.Taylor
         }
         private void Submit(string ignored)
         {
+            if (!DocumentPrintTarget.IsTarget(PrintRoot)) return;
             if (session == null || mode != ViewMode.HackerEditor || session.Phase != EntryPhase.Preparation ||
                 queued || session.HasPrintedGovernment || lastSubmitFrame == Time.frameCount) return;
             lastSubmitFrame = Time.frameCount;
@@ -131,6 +134,7 @@ namespace CarryOn.Taylor
         private void Refresh()
         {
             bool printed = session.HasPrintedGovernment;
+            if (printedStamp != null) printedStamp.SetActive(printed);
             if (wasPrinted && !printed) { queued = sent = false; pending.Clear(); pendingCategory = null; lastSubmitFrame = -1; }
             if (session.Phase != EntryPhase.Preparation) { queued = sent = false; pending.Clear(); pendingCategory = null; }
             if (printed && !wasPrinted && mode == ViewMode.HackerEditor && printAudioSource != null && printAudioSource.clip != null)
@@ -151,7 +155,7 @@ namespace CarryOn.Taylor
                 if (nationalityText != null) nationalityText.text = data.Nationality ?? "";
                 if (positionText != null) positionText.text = data.Position ?? "";
                 if (mode == ViewMode.TravelerCopy && document != null)
-                    document.SetActive(printed && session.Phase == EntryPhase.Preparation);
+                    document.SetActive(printed && session.Phase != EntryPhase.Interview);
             }
             var category = pendingCategory ?? data.Category;
             for (int i = 0; i < categoryCircles.Length; i++)
@@ -162,7 +166,7 @@ namespace CarryOn.Taylor
                 bool complete = category != TaskCategory.None;
                 foreach (var input in Inputs) if (input == null || string.IsNullOrWhiteSpace(input.text)) complete = false;
                 if (printHint != null) printHint.text = printed ? "GOVERNMENT PAPER / PRINTED" : queued ? "PRINTING..." :
-                    complete ? "GOVERNMENT PAPER / ENTER TO PRINT" : "Fill in all 3 fields and circle one category.";
+                    complete ? "HOVER HERE + ENTER TO PRINT" : "Fill all fields and circle a category. Hover here + Enter to print.";
                 if (queued && !sent && pending.Count == 0 && !pendingCategory.HasValue && session.CanPrintGovernment)
                 { sent = true; session.RequestGovernmentPrint(); }
             }
