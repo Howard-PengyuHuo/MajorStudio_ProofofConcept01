@@ -27,6 +27,7 @@ namespace CarryOn.Taylor
         [SerializeField] private GameObject printedStamp;
         [SerializeField] private Color readyHintColor = new Color(.65f, 1f, .3f);
         private bool printQueued, printSent, wasPrinted;
+        private bool wasGovernmentPrinted;
         private int lastPrintFrame = -1;
         private Coroutine focusRoutine;
         private TMP_InputField[] fields;
@@ -58,6 +59,7 @@ namespace CarryOn.Taylor
             lastPrintFrame = -1;
             pendingEdits.Clear();
             wasPrinted = session.HasPrintedIdentity;
+            wasGovernmentPrinted = session.HasPrintedGovernment;
             if (printButton != null) printButton.gameObject.SetActive(false);
             if (role == PlayerRole.Hacker)
                 foreach (var input in Fields)
@@ -206,7 +208,8 @@ namespace CarryOn.Taylor
                 lastPrintFrame = -1;
                 ClearHighlights();
             }
-            if (session.HasPrintedIdentity && !wasPrinted && role == PlayerRole.Hacker)
+            bool receivedGovernment = role == PlayerRole.Traveler && session.HasPrintedGovernment && !wasGovernmentPrinted;
+            if ((session.HasPrintedIdentity && !wasPrinted) || receivedGovernment)
             {
                 if (printAudioSource != null && printAudioSource.clip != null)
                     printAudioSource.PlayOneShot(printAudioSource.clip);
@@ -217,6 +220,7 @@ namespace CarryOn.Taylor
                 lastPrintFrame = -1;
             }
             wasPrinted = session.HasPrintedIdentity;
+            wasGovernmentPrinted = session.HasPrintedGovernment;
             if (printedStamp != null) printedStamp.SetActive(session.HasPrintedIdentity);
             bool interview = session.Phase == EntryPhase.Interview;
             bool editing = session.Phase == EntryPhase.Preparation && !session.HasPrintedIdentity;
